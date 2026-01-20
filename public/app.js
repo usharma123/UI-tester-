@@ -135,22 +135,92 @@ async function handleSubmit(e) {
 }
 
 // SSE Connection
+let sseRetryCount = 0;
+const MAX_SSE_RETRIES = 3;
+
 function connectSSE(runId) {
   if (eventSource) {
     eventSource.close();
   }
 
-  eventSource = new EventSource(`/api/run/${runId}/events`);
+  sseRetryCount = 0;
+  
+  function connect() {
+    eventSource = new EventSource(`/api/run/${runId}/events`);
 
-  eventSource.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    handleSSEEvent(data);
-  };
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      handleSSEEvent(data);
+      sseRetryCount = 0; // Reset retry count on successful message
+    };
 
-  eventSource.onerror = (error) => {
-    console.error("SSE Error:", error);
-    eventSource.close();
-  };
+    eventSource.onerror = (error) => {
+      console.error("SSE Error:", error);
+      eventSource.close();
+      
+      // Try to reconnect if we haven't exceeded retry limit
+      if (sseRetryCount < MAX_SSE_RETRIES) {
+        sseRetryCount++;
+        log("warn", `Connection lost. Reconnecting... (attempt ${sseRetryCount})`);
+        setTimeout(() => connect(), 2000 * sseRetryCount);
+      } else {
+        log("error", "Connection lost. Please refresh to see results.");
+        // Start polling as fallback
+        startPolling(runId);
+      }
+    };
+  }
+  
+  connect();
+}
+
+// Fallback polling for when SSE fails
+let pollingInterval = null;
+
+function startPolling(runId) {
+  if (pollingInterval) return;
+  
+  pollingInterval = setInterval(async () => {
+    try {
+      const response = await fetch(`/api/runs/${runId}`);
+      if (!response.ok) return;
+      
+      const run = await response.json();
+      
+      if (run.status === "completed" && run.report) {
+        stopPolling();
+        setLoading(false);
+        stopTimer();
+        hideProgress();
+        
+        // Populate screenshots from run
+        screenshots = (run.screenshots || []).map((s) => ({
+          url: s.url,
+          label: s.label,
+          stepIndex: s.stepIndex,
+        }));
+        
+        showResults(run.report, run.evidence);
+        updateHistoryItem(currentRunId, { status: "completed", score: run.report.score });
+        log("info", "Results loaded successfully");
+      } else if (run.status === "failed") {
+        stopPolling();
+        setLoading(false);
+        stopTimer();
+        showError(run.error || "Test failed");
+        updateHistoryItem(currentRunId, { status: "failed" });
+      }
+    } catch (error) {
+      console.error("Polling error:", error);
+    }
+  }, 5000); // Poll every 5 seconds
+}
+
+function stopPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
 }
 
 function handleSSEEvent(event) {
@@ -205,6 +275,7 @@ function handleSSEEvent(event) {
     case "complete":
       setLoading(false);
       stopTimer();
+      stopPolling();
       hideProgress();
       showResults(event.report, event.evidence);
       updateHistoryItem(currentRunId, { status: "completed", score: event.report.score });
@@ -212,11 +283,14 @@ function handleSSEEvent(event) {
         eventSource.close();
         eventSource = null;
       }
+      // Refresh history to get latest data
+      loadHistory();
       break;
 
     case "error":
       setLoading(false);
       stopTimer();
+      stopPolling();
       showError(event.message);
       updateHistoryItem(currentRunId, { status: "failed" });
       if (eventSource) {
