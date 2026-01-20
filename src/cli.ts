@@ -12,7 +12,7 @@ Usage:
 Options:
   --goals <string>     Test goals (default: "homepage UX + primary CTA + form validation + keyboard")
   --maxSteps <number>  Maximum steps to execute (default: 20)
-  --model <string>     OpenRouter model to use (default: from env or minimax/minimax-m1)
+  --model <string>     OpenRouter model to use (default: from env or google/gemini-3-flash)
   --help               Show this help message
 
 Environment Variables:

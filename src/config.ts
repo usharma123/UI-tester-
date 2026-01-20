@@ -15,7 +15,7 @@ export interface CLIOptions {
 }
 
 const DEFAULT_CONFIG = {
-  openRouterModel: "minimax/minimax-m1",
+  openRouterModel: "anthropic/claude-sonnet-4.5",
   maxSteps: 20,
   goals: "homepage UX + primary CTA + form validation + keyboard",
   screenshotDir: "screenshots",

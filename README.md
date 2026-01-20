@@ -59,7 +59,7 @@ bun run qa --help
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | - | Your OpenRouter API key |
-| `OPENROUTER_MODEL` | No | `minimax/minimax-m1` | Default LLM model |
+| `OPENROUTER_MODEL` | No | `google/gemini-3-flash` | Default LLM model |
 | `MAX_STEPS` | No | `20` | Maximum test steps |
 | `GOALS` | No | `homepage UX + primary CTA + form validation + keyboard` | Default test goals |
 | `SCREENSHOT_DIR` | No | `screenshots/` | Screenshot output directory |
