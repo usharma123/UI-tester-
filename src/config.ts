@@ -6,6 +6,13 @@ export interface Config {
   screenshotDir: string;
   reportDir: string;
   browserTimeout: number;
+  navigationTimeout: number;
+  actionTimeout: number;
+  maxRetries: number;
+  retryDelayMs: number;
+  maxPages: number;
+  stepsPerPage: number;
+  parallelBrowsers: number;  // Number of concurrent browser instances for parallel testing
 }
 
 export interface CLIOptions {
@@ -20,7 +27,14 @@ const DEFAULT_CONFIG = {
   goals: "homepage UX + primary CTA + form validation + keyboard",
   screenshotDir: "screenshots",
   reportDir: "reports",
-  browserTimeout: 30000,
+  browserTimeout: 60000,        // Increased from 30s to 60s
+  navigationTimeout: 45000,     // Separate timeout for page loads
+  actionTimeout: 15000,         // Timeout for clicks/fills
+  maxRetries: 3,                // Retry 3 times before skipping
+  retryDelayMs: 1000,           // Initial retry delay (doubles each retry)
+  maxPages: 50,                 // Maximum pages to test from sitemap
+  stepsPerPage: 5,              // Max steps per page in per-page testing mode
+  parallelBrowsers: 5,          // Number of concurrent browser instances (1-10)
 };
 
 export function loadConfig(cliOptions: CLIOptions = {}): Config {
@@ -41,5 +55,12 @@ export function loadConfig(cliOptions: CLIOptions = {}): Config {
     screenshotDir: process.env.SCREENSHOT_DIR ?? DEFAULT_CONFIG.screenshotDir,
     reportDir: process.env.REPORT_DIR ?? DEFAULT_CONFIG.reportDir,
     browserTimeout: parseInt(process.env.BROWSER_TIMEOUT ?? String(DEFAULT_CONFIG.browserTimeout), 10),
+    navigationTimeout: parseInt(process.env.NAVIGATION_TIMEOUT ?? String(DEFAULT_CONFIG.navigationTimeout), 10),
+    actionTimeout: parseInt(process.env.ACTION_TIMEOUT ?? String(DEFAULT_CONFIG.actionTimeout), 10),
+    maxRetries: parseInt(process.env.MAX_RETRIES ?? String(DEFAULT_CONFIG.maxRetries), 10),
+    retryDelayMs: parseInt(process.env.RETRY_DELAY_MS ?? String(DEFAULT_CONFIG.retryDelayMs), 10),
+    maxPages: parseInt(process.env.MAX_PAGES ?? String(DEFAULT_CONFIG.maxPages), 10),
+    stepsPerPage: parseInt(process.env.STEPS_PER_PAGE ?? String(DEFAULT_CONFIG.stepsPerPage), 10),
+    parallelBrowsers: Math.min(10, Math.max(1, parseInt(process.env.PARALLEL_BROWSERS ?? String(DEFAULT_CONFIG.parallelBrowsers), 10))),
   };
 }

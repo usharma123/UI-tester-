@@ -14,6 +14,10 @@ export interface Plan {
   steps: Step[];
 }
 
+export interface PagePlan {
+  steps: Step[];
+}
+
 export type IssueSeverity = "blocker" | "high" | "medium" | "low" | "nit";
 
 export type IssueCategory = "Navigation" | "Forms" | "Accessibility" | "Visual" | "Feedback" | "Content";

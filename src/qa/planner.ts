@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 import type { Config } from "../config.js";
-import type { Plan } from "./types.js";
-import { safeParsePlan } from "./schemas.js";
-import { PLANNER_SYSTEM_PROMPT, buildPlannerPrompt } from "../prompts/planner.js";
+import type { Plan, PagePlan } from "./types.js";
+import { safeParsePlan, safeParsePagePlan } from "./schemas.js";
+import { PLANNER_SYSTEM_PROMPT, buildPlannerPrompt, PAGE_TEST_SYSTEM_PROMPT, buildPageTestPrompt } from "../prompts/planner.js";
 import { redactSnapshot, truncateSnapshot } from "../utils/redact.js";
 
 export interface PlannerResult {
@@ -79,4 +79,83 @@ export async function createPlan(
   }
 
   throw new Error(`Failed to generate valid plan after ${maxRetries} attempts: ${lastError?.message}`);
+}
+
+export interface PagePlannerResult {
+  plan: PagePlan;
+  rawResponse: string;
+}
+
+/**
+ * Create a focused test plan for a single page
+ * Used in systematic page-by-page testing
+ */
+export async function createPagePlan(
+  config: Config,
+  pageUrl: string,
+  snapshot: string,
+  stepsPerPage: number = 5
+): Promise<PagePlannerResult> {
+  const client = new OpenAI({
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey: config.openRouterApiKey,
+  });
+
+  const processedSnapshot = truncateSnapshot(redactSnapshot(snapshot), 20000);
+  const userPrompt = buildPageTestPrompt(pageUrl, processedSnapshot, stepsPerPage);
+
+  let lastError: Error | null = null;
+  const maxRetries = 2;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: "system", content: PAGE_TEST_SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ];
+
+    if (attempt > 0 && lastError) {
+      messages.push({
+        role: "user",
+        content: `Your previous response was invalid JSON. Error: ${lastError.message}\n\nPlease output ONLY valid JSON matching the schema. No markdown, no explanation.`,
+      });
+    }
+
+    const response = await client.chat.completions.create({
+      model: config.openRouterModel,
+      messages,
+      temperature: 0.3,
+      max_tokens: 2000, // Smaller response for per-page plans
+    });
+
+    const rawResponse = response.choices[0]?.message?.content ?? "";
+
+    try {
+      const jsonStr = extractJson(rawResponse);
+      const parsed = JSON.parse(jsonStr);
+      const validated = safeParsePagePlan(parsed);
+
+      if (validated.success) {
+        // Filter out any "open" steps that might have slipped through
+        const filteredSteps = validated.data.steps.filter((step) => step.type !== "open");
+
+        return {
+          plan: { steps: filteredSteps.slice(0, stepsPerPage) },
+          rawResponse,
+        };
+      }
+
+      lastError = new Error(
+        `Schema validation failed: ${validated.error.errors.map((e) => e.message).join(", ")}`
+      );
+    } catch (parseError) {
+      lastError = parseError instanceof Error ? parseError : new Error(String(parseError));
+    }
+  }
+
+  // If we couldn't generate a valid plan, return an empty plan
+  // (don't block the entire test run for one page)
+  return {
+    plan: { steps: [] },
+    rawResponse: `Failed to generate valid page plan: ${lastError?.message}`,
+  };
 }

@@ -1,7 +1,7 @@
 import type { Plan, Report, Evidence, Step, ExecutedStepStatus } from "../qa/types";
 
 // Phases of the QA run
-export type QAPhase = "init" | "discovery" | "planning" | "execution" | "evaluation";
+export type QAPhase = "init" | "discovery" | "planning" | "execution" | "traversal" | "evaluation";
 
 // Sitemap URL structure
 export interface SitemapUrl {
@@ -94,6 +94,35 @@ export interface SitemapEvent extends SSEEventBase {
   totalPages: number;
 }
 
+// Page traversal events (for systematic page testing)
+export interface PageStartEvent extends SSEEventBase {
+  type: "page_start";
+  url: string;
+  pageIndex: number;
+  totalPages: number;
+}
+
+export type PageStatus = "success" | "skipped" | "failed";
+
+export interface PageCompleteEvent extends SSEEventBase {
+  type: "page_complete";
+  url: string;
+  pageIndex: number;
+  status: PageStatus;
+  screenshotUrl?: string;
+  stepsExecuted?: number;
+  error?: string;
+}
+
+// Progress tracking for pages
+export interface PagesProgressEvent extends SSEEventBase {
+  type: "pages_progress";
+  tested: number;
+  skipped: number;
+  remaining: number;
+  total: number;
+}
+
 // Union of all SSE event types
 export type SSEEvent =
   | ConnectedEvent
@@ -106,7 +135,10 @@ export type SSEEvent =
   | CompleteEvent
   | ErrorEvent
   | LogEvent
-  | SitemapEvent;
+  | SitemapEvent
+  | PageStartEvent
+  | PageCompleteEvent
+  | PagesProgressEvent;
 
 // Progress callback type for streaming runner
 export type ProgressCallback = (event: SSEEvent) => void;

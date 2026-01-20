@@ -1,14 +1,16 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Config } from "../config.js";
-import type { Report, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry, Step } from "./types.js";
-import type { ProgressCallback, SSEEvent, QAPhase } from "../web/types.js";
+import type { Report, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry, Step, PagePlan } from "./types.js";
+import type { ProgressCallback, SSEEvent, QAPhase, PageStatus } from "../web/types.js";
 import { createAgentBrowser, type AgentBrowser } from "../agentBrowser.js";
-import { createPlan } from "./planner.js";
+import { createPlan, createPagePlan } from "./planner.js";
 import { evaluateEvidence } from "./judge.js";
 import { ensureDir } from "../utils/fs.js";
 import { getTimestamp } from "../utils/time.js";
 import { fetchSitemap, formatSitemapForPlanner, type SitemapResult } from "../utils/sitemap.js";
+import { createBrowserPool } from "../utils/browserPool.js";
+import { testPagesInParallel, mergeParallelResults, type ParallelTestCallbacks } from "./parallelTester.js";
 import * as convex from "../web/convex.js";
 
 export interface StreamingRunOptions {
@@ -47,18 +49,53 @@ function shouldSnapshotAfter(stepType: string): boolean {
   return ["click", "fill", "press"].includes(stepType);
 }
 
+/**
+ * Check if error should block the entire test run
+ * Only browser crashes/disconnects should block - timeouts should skip and continue
+ */
 function isBlockingError(error: string): boolean {
   const blockingPatterns = [
-    "timeout",
     "crashed",
     "disconnected",
-    "navigation failed",
     "target closed",
     "session closed",
+    "browser has been closed",
+    "protocol error",
   ];
 
   const lowerError = error.toLowerCase();
   return blockingPatterns.some((pattern) => lowerError.includes(pattern));
+}
+
+/**
+ * Check if error is a timeout that should skip the current action/page
+ * These errors should NOT block the entire run
+ */
+function isSkippableError(error: string): boolean {
+  const skippablePatterns = [
+    "timeout",
+    "navigation failed",
+    "net::",
+    "err_connection",
+    "element not found",
+    "no element matches",
+  ];
+
+  const lowerError = error.toLowerCase();
+  return skippablePatterns.some((pattern) => lowerError.includes(pattern));
+}
+
+/**
+ * Create a URL-safe slug from a URL for use in filenames
+ */
+function slugify(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\//g, "-").replace(/^-|-$/g, "");
+    return path || "home";
+  } catch {
+    return "page";
+  }
 }
 
 // Check if error is due to multiple elements matching
@@ -160,6 +197,10 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
 
   const browser = createAgentBrowser({
     timeout: config.browserTimeout,
+    navigationTimeout: config.navigationTimeout,
+    actionTimeout: config.actionTimeout,
+    maxRetries: config.maxRetries,
+    retryDelayMs: config.retryDelayMs,
     debug: process.env.DEBUG === "true",
   });
 
@@ -280,164 +321,224 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
 
     emitPhaseComplete(onProgress, "planning");
 
-    // === Phase 3: Execution ===
+    // === Phase 4: Per-Page Traversal (Systematic Testing) ===
+    emitPhaseStart(onProgress, "traversal");
+
+    const parallelCount = config.parallelBrowsers;
+    emit(onProgress, {
+      type: "log",
+      message: `Starting parallel page testing with ${parallelCount} browsers...`,
+      level: "info"
+    });
+
+    // Limit pages to test based on config
+    const pagesToTest = sitemap.urls.slice(0, config.maxPages);
+
+    // Progress tracking
+    let pagesCompleted = 0;
+    const pageProgress = {
+      tested: 0,
+      skipped: 0,
+      remaining: pagesToTest.length,
+      total: pagesToTest.length,
+    };
+
+    // Create browser pool for parallel execution
+    const browserPool = createBrowserPool(parallelCount, {
+      timeout: config.browserTimeout,
+      navigationTimeout: config.navigationTimeout,
+      actionTimeout: config.actionTimeout,
+      maxRetries: config.maxRetries,
+      retryDelayMs: config.retryDelayMs,
+      debug: process.env.DEBUG === "true",
+    });
+
+    // Set up callbacks for parallel tester
+    const parallelCallbacks: ParallelTestCallbacks = {
+      onPageStart: (url, pageIndex) => {
+        emit(onProgress, {
+          type: "page_start",
+          url,
+          pageIndex,
+          totalPages: pagesToTest.length,
+        });
+        emit(onProgress, {
+          type: "log",
+          message: `[Browser ${browserPool.getActiveCount()}/${parallelCount}] Testing page ${pageIndex + 1}/${pagesToTest.length}: ${url}`,
+          level: "info",
+        });
+      },
+
+      onPageComplete: (result) => {
+        pagesCompleted++;
+
+        // Update progress
+        if (result.status === "success") {
+          pageProgress.tested++;
+        } else if (result.status === "skipped") {
+          pageProgress.skipped++;
+        }
+        pageProgress.remaining = pagesToTest.length - pagesCompleted;
+
+        emit(onProgress, {
+          type: "page_complete",
+          url: result.url,
+          pageIndex: result.pageIndex,
+          status: result.status,
+          screenshotUrl: result.screenshotUrl,
+          stepsExecuted: result.stepsExecuted,
+          error: result.error,
+        });
+
+        emit(onProgress, {
+          type: "pages_progress",
+          tested: pageProgress.tested,
+          skipped: pageProgress.skipped,
+          remaining: pageProgress.remaining,
+          total: pageProgress.total,
+        });
+      },
+
+      onStepStart: (pageIndex, stepIndex, step, totalSteps) => {
+        emit(onProgress, {
+          type: "step_start",
+          stepIndex,
+          step,
+          totalSteps,
+        });
+      },
+
+      onStepComplete: (pageIndex, stepIndex, status, result, error) => {
+        emit(onProgress, {
+          type: "step_complete",
+          stepIndex,
+          status,
+          result,
+          error,
+        });
+      },
+
+      onLog: (message, level) => {
+        emit(onProgress, { type: "log", message, level });
+      },
+
+      uploadScreenshot: async (localPath, stepIndex, label) => {
+        return await uploadAndEmitScreenshot(localPath, stepIndex, label);
+      },
+    };
+
+    // Run parallel page testing
+    let parallelResults;
+    try {
+      parallelResults = await testPagesInParallel(
+        pagesToTest,
+        browserPool,
+        config,
+        screenshotDir,
+        parallelCallbacks
+      );
+    } finally {
+      // Always close all browsers in the pool
+      await browserPool.closeAll();
+    }
+
+    // Merge results from parallel execution
+    const merged = mergeParallelResults(parallelResults);
+    const executedSteps = merged.executedSteps;
+    const snapshots = merged.snapshots;
+    const errors = merged.errors;
+    const screenshotMap = merged.screenshotMap;
+
+    // Calculate global step index for additional steps
+    let globalStepIndex = executedSteps.length > 0
+      ? Math.max(...executedSteps.map(s => s.index)) + 1
+      : 0;
+    let screenshotCounter = Object.keys(screenshotMap).length + 1;
+
+    // Check if any page had a blocking error
+    let blocked = parallelResults.some(r => r.status === "failed");
+
+    emitPhaseComplete(onProgress, "traversal");
+
+    // Also run the original plan steps for any additional testing
+    // (This ensures we still test things the LLM identified in the initial plan)
     emitPhaseStart(onProgress, "execution");
+    emit(onProgress, { type: "log", message: "Executing additional planned tests...", level: "info" });
 
-    const executedSteps: ExecutedStep[] = [];
-    const snapshots: SnapshotEntry[] = [];
-    const errors: ErrorEntry[] = [];
-    const screenshotMap: Record<string, number> = {};
-    let screenshotCounter = 1;
-    let blocked = false;
+    // Filter plan steps to only include those that navigate to URLs we haven't tested
+    const testedUrls = new Set(pagesToTest.map(p => p.loc));
+    const additionalSteps = plan.steps.filter(step => {
+      if (step.type === "open" && step.selector) {
+        return !testedUrls.has(step.selector);
+      }
+      // Include non-navigation steps
+      return step.type !== "open";
+    }).slice(0, Math.max(0, config.maxSteps - globalStepIndex));
 
-    const stepsToExecute = plan.steps.slice(0, config.maxSteps);
-
-    for (let i = 0; i < stepsToExecute.length; i++) {
-      if (blocked) break;
-
-      const step = stepsToExecute[i];
+    for (let i = 0; i < additionalSteps.length && !blocked; i++) {
+      const step = additionalSteps[i];
 
       emit(onProgress, {
         type: "step_start",
-        stepIndex: i,
+        stepIndex: globalStepIndex,
         step,
-        totalSteps: stepsToExecute.length,
+        totalSteps: additionalSteps.length,
       });
 
       const executedStep: ExecutedStep = {
-        index: i,
+        index: globalStepIndex,
         step,
         status: "success",
         timestamp: Date.now(),
       };
 
       try {
-        let result: string | undefined;
-        let retryAttempt = 0;
-        const maxRetries = 2;
-        let currentStep = { ...step };
-        let lastError: string | undefined;
-        
-        // Execution with retry for multiple-match errors
-        while (retryAttempt <= maxRetries) {
-          try {
-            result = await executeStep(browser, currentStep, screenshotDir, i);
-            lastError = undefined;
-            break; // Success!
-          } catch (stepError) {
-            const errorMsg = stepError instanceof Error ? stepError.message : String(stepError);
-            lastError = errorMsg;
-            
-            // Check if it's a multiple-match error that we can retry
-            const multiMatch = isMultipleMatchError(errorMsg);
-            if (multiMatch.matched && currentStep.selector && retryAttempt < maxRetries) {
-              retryAttempt++;
-              const newSelector = makeFirstSelector(currentStep.selector);
-              
-              emit(onProgress, {
-                type: "log",
-                message: `Selector matched ${multiMatch.count} elements, retrying with: ${newSelector}`,
-                level: "warn",
-              });
-              
-              // Update the step with more specific selector
-              currentStep = { ...currentStep, selector: newSelector };
-            } else {
-              // Not a retryable error or max retries reached
-              throw stepError;
-            }
-          }
-        }
-        
-        if (lastError) {
-          throw new Error(lastError);
-        }
-        
+        const result = await executeStep(browser, step, screenshotDir, globalStepIndex);
         executedStep.result = result;
 
-        if (shouldSnapshotAfter(step.type)) {
-          try {
-            const snapshotContent = await browser.snapshot();
-            snapshots.push({ stepIndex: i, content: snapshotContent });
-          } catch (snapshotError) {
-            emit(onProgress, {
-              type: "log",
-              message: `Failed to take snapshot at step ${i}: ${snapshotError}`,
-              level: "warn",
-            });
-          }
-        }
-
-        let screenshotUrl: string | undefined;
+        let stepScreenshotUrl: string | undefined;
         if (shouldScreenshotAfter(step.type)) {
           const filename = `step-${String(screenshotCounter).padStart(2, "0")}-after.png`;
           const filepath = join(screenshotDir, filename);
           try {
             await browser.screenshot(filepath);
-            screenshotMap[filepath] = i;
-            screenshotUrl = await uploadAndEmitScreenshot(filepath, i, `After ${step.type}`);
+            screenshotMap[filepath] = globalStepIndex;
+            stepScreenshotUrl = await uploadAndEmitScreenshot(filepath, globalStepIndex, `After ${step.type}`);
             executedStep.screenshotPath = filepath;
             screenshotCounter++;
-          } catch (screenshotError) {
-            emit(onProgress, {
-              type: "log",
-              message: `Failed to take screenshot at step ${i}: ${screenshotError}`,
-              level: "warn",
-            });
+          } catch {
+            // Ignore screenshot errors
           }
         }
 
         emit(onProgress, {
           type: "step_complete",
-          stepIndex: i,
+          stepIndex: globalStepIndex,
           status: "success",
           result: executedStep.result,
-          screenshotUrl,
+          screenshotUrl: stepScreenshotUrl,
         });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         executedStep.status = "failed";
         executedStep.error = errorMessage;
-        errors.push({ stepIndex: i, error: errorMessage });
-
-        // Try to take error screenshot
-        let screenshotUrl: string | undefined;
-        try {
-          const filename = `step-${String(screenshotCounter).padStart(2, "0")}-error.png`;
-          const filepath = join(screenshotDir, filename);
-          await browser.screenshot(filepath);
-          screenshotMap[filepath] = i;
-          screenshotUrl = await uploadAndEmitScreenshot(filepath, i, `Error at ${step.type}`);
-          executedStep.screenshotPath = filepath;
-          screenshotCounter++;
-        } catch (screenshotError) {
-          emit(onProgress, {
-            type: "log",
-            message: `Failed to take error screenshot at step ${i}: ${screenshotError}`,
-            level: "warn",
-          });
-        }
+        errors.push({ stepIndex: globalStepIndex, error: errorMessage });
 
         if (isBlockingError(errorMessage)) {
           executedStep.status = "blocked";
           blocked = true;
-          emit(onProgress, {
-            type: "log",
-            message: `Execution blocked at step ${i}: ${errorMessage}`,
-            level: "error",
-          });
         }
 
         emit(onProgress, {
           type: "step_complete",
-          stepIndex: i,
+          stepIndex: globalStepIndex,
           status: executedStep.status,
           error: errorMessage,
-          screenshotUrl,
         });
       }
 
       executedSteps.push(executedStep);
+      globalStepIndex++;
     }
 
     const evidence: Evidence = {

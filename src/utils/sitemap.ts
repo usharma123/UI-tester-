@@ -110,6 +110,44 @@ function getCommonPaths(baseUrl: string): string[] {
 }
 
 /**
+ * Sort URLs by priority with homepage first
+ * Higher priority URLs come first, homepage always at top
+ */
+function sortUrlsByPriority(urls: SitemapUrl[], baseUrl: string): SitemapUrl[] {
+  const baseHost = new URL(baseUrl).hostname;
+
+  return [...urls].sort((a, b) => {
+    try {
+      const pathA = new URL(a.loc).pathname;
+      const pathB = new URL(b.loc).pathname;
+
+      // Homepage always first
+      const isHomeA = pathA === "/" || pathA === "";
+      const isHomeB = pathB === "/" || pathB === "";
+
+      if (isHomeA && !isHomeB) return -1;
+      if (isHomeB && !isHomeA) return 1;
+
+      // Then sort by priority (higher priority first)
+      const priorityA = a.priority ?? 0.5;
+      const priorityB = b.priority ?? 0.5;
+
+      if (priorityA !== priorityB) {
+        return priorityB - priorityA;
+      }
+
+      // Then by path depth (shallower paths first)
+      const depthA = pathA.split("/").filter(Boolean).length;
+      const depthB = pathB.split("/").filter(Boolean).length;
+
+      return depthA - depthB;
+    } catch {
+      return 0;
+    }
+  });
+}
+
+/**
  * Filter URLs to only include public, testable pages
  */
 function filterPublicUrls(urls: SitemapUrl[], baseUrl: string): SitemapUrl[] {
@@ -198,8 +236,9 @@ export async function fetchSitemap(baseUrl: string, timeoutMs = 10000): Promise<
           if (urls.length > 0) {
             const filtered = filterPublicUrls(urls, base);
             if (filtered.length > 0) {
+              const sorted = sortUrlsByPriority(filtered, base);
               return {
-                urls: filtered.slice(0, 50), // Limit to 50 URLs
+                urls: sorted.slice(0, 50), // Limit to 50 URLs
                 source: "sitemap.xml",
               };
             }
@@ -234,8 +273,9 @@ export async function fetchSitemap(baseUrl: string, timeoutMs = 10000): Promise<
               if (urls.length > 0) {
                 const filtered = filterPublicUrls(urls, base);
                 if (filtered.length > 0) {
+                  const sorted = sortUrlsByPriority(filtered, base);
                   return {
-                    urls: filtered.slice(0, 50),
+                    urls: sorted.slice(0, 50),
                     source: "robots.txt",
                   };
                 }

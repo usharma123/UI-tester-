@@ -231,8 +231,8 @@ async function handleGetRun(runId: string): Promise<Response> {
 
 const server = Bun.serve({
   port: PORT,
-  // Increase idle timeout for long-running SSE connections (5 minutes)
-  idleTimeout: 300,
+  // Increase idle timeout for long-running SSE connections (max 255 seconds)
+  idleTimeout: 255,
   async fetch(request) {
     const url = new URL(request.url);
     const path = url.pathname;
