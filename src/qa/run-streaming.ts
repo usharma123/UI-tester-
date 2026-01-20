@@ -1,13 +1,14 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Config } from "../config.js";
-import type { RunContext, Report, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry, Step } from "./types.js";
+import type { Report, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry, Step } from "./types.js";
 import type { ProgressCallback, SSEEvent, QAPhase } from "../web/types.js";
 import { createAgentBrowser, type AgentBrowser } from "../agentBrowser.js";
 import { createPlan } from "./planner.js";
 import { evaluateEvidence } from "./judge.js";
 import { ensureDir } from "../utils/fs.js";
 import { getTimestamp } from "../utils/time.js";
+import { fetchSitemap, formatSitemapForPlanner, type SitemapResult } from "../utils/sitemap.js";
 import * as convex from "../web/convex.js";
 
 export interface StreamingRunOptions {
@@ -58,6 +59,37 @@ function isBlockingError(error: string): boolean {
 
   const lowerError = error.toLowerCase();
   return blockingPatterns.some((pattern) => lowerError.includes(pattern));
+}
+
+// Check if error is due to multiple elements matching
+function isMultipleMatchError(error: string): { matched: boolean; count?: number; selector?: string } {
+  // Strip ANSI escape codes first
+  const cleanError = error.replace(/\x1b\[[0-9;]*m/g, "").replace(/\[[\d;]*m/g, "");
+  
+  // Pattern: Selector "XXX" matched N elements
+  const match = cleanError.match(/Selector "([^"]+)" matched (\d+) elements/);
+  if (match) {
+    return { matched: true, selector: match[1], count: parseInt(match[2], 10) };
+  }
+  return { matched: false };
+}
+
+// Make a selector more specific by targeting first element
+function makeFirstSelector(selector: string): string {
+  // For text selectors, use first match
+  if (selector.startsWith("text=") || selector.startsWith("text:")) {
+    return `${selector} >> nth=0`;
+  }
+  // For link selectors
+  if (selector.startsWith("a:") || selector.includes(":has-text")) {
+    return `${selector} >> nth=0`;
+  }
+  // For CSS selectors
+  if (selector.includes(" ") || selector.includes(">")) {
+    return `${selector}:first-of-type`;
+  }
+  // Default: add nth=0
+  return `${selector} >> nth=0`;
 }
 
 async function executeStep(
@@ -176,11 +208,69 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
 
     emitPhaseComplete(onProgress, "init");
 
-    // === Phase 2: Planning ===
+    // === Phase 2: Discovery ===
+    emitPhaseStart(onProgress, "discovery");
+    emit(onProgress, { type: "log", message: "Discovering site structure...", level: "info" });
+    
+    let sitemap: SitemapResult;
+    try {
+      sitemap = await fetchSitemap(url, 15000);
+      
+      // If no pages found, use common paths fallback
+      if (sitemap.urls.length === 0) {
+        const baseUrl = url.replace(/\/$/, "");
+        sitemap = {
+          urls: [
+            { loc: baseUrl },
+            { loc: `${baseUrl}/about` },
+            { loc: `${baseUrl}/pricing` },
+            { loc: `${baseUrl}/features` },
+            { loc: `${baseUrl}/contact` },
+            { loc: `${baseUrl}/blog` },
+            { loc: `${baseUrl}/docs` },
+            { loc: `${baseUrl}/faq` },
+            { loc: `${baseUrl}/terms` },
+            { loc: `${baseUrl}/privacy` },
+          ],
+          source: "crawled",
+        };
+        emit(onProgress, {
+          type: "log",
+          message: "No sitemap found, using common page paths",
+          level: "info",
+        });
+      }
+      
+      emit(onProgress, {
+        type: "sitemap",
+        urls: sitemap.urls.map(u => ({ loc: u.loc, lastmod: u.lastmod, priority: u.priority })),
+        source: sitemap.source,
+        totalPages: sitemap.urls.length,
+      });
+      emit(onProgress, {
+        type: "log",
+        message: `Found ${sitemap.urls.length} pages via ${sitemap.source}`,
+        level: "info",
+      });
+    } catch (error) {
+      emit(onProgress, {
+        type: "log",
+        message: `Sitemap discovery failed: ${error}`,
+        level: "warn",
+      });
+      sitemap = { urls: [{ loc: url }], source: "none" };
+    }
+    
+    emitPhaseComplete(onProgress, "discovery");
+
+    // === Phase 3: Planning ===
     emitPhaseStart(onProgress, "planning");
     emit(onProgress, { type: "log", message: `Creating test plan for: ${goals}`, level: "info" });
+    
+    // Include sitemap info in the planning context
+    const sitemapContext = formatSitemapForPlanner(sitemap);
 
-    const { plan } = await createPlan(config, url, goals, initialSnapshot);
+    const { plan } = await createPlan(config, url, goals, initialSnapshot, sitemapContext);
 
     emit(onProgress, {
       type: "plan_created",
@@ -222,7 +312,47 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       };
 
       try {
-        const result = await executeStep(browser, step, screenshotDir, i);
+        let result: string | undefined;
+        let retryAttempt = 0;
+        const maxRetries = 2;
+        let currentStep = { ...step };
+        let lastError: string | undefined;
+        
+        // Execution with retry for multiple-match errors
+        while (retryAttempt <= maxRetries) {
+          try {
+            result = await executeStep(browser, currentStep, screenshotDir, i);
+            lastError = undefined;
+            break; // Success!
+          } catch (stepError) {
+            const errorMsg = stepError instanceof Error ? stepError.message : String(stepError);
+            lastError = errorMsg;
+            
+            // Check if it's a multiple-match error that we can retry
+            const multiMatch = isMultipleMatchError(errorMsg);
+            if (multiMatch.matched && currentStep.selector && retryAttempt < maxRetries) {
+              retryAttempt++;
+              const newSelector = makeFirstSelector(currentStep.selector);
+              
+              emit(onProgress, {
+                type: "log",
+                message: `Selector matched ${multiMatch.count} elements, retrying with: ${newSelector}`,
+                level: "warn",
+              });
+              
+              // Update the step with more specific selector
+              currentStep = { ...currentStep, selector: newSelector };
+            } else {
+              // Not a retryable error or max retries reached
+              throw stepError;
+            }
+          }
+        }
+        
+        if (lastError) {
+          throw new Error(lastError);
+        }
+        
         executedStep.result = result;
 
         if (shouldSnapshotAfter(step.type)) {

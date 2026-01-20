@@ -22,7 +22,8 @@ export async function createPlan(
   config: Config,
   url: string,
   goals: string,
-  snapshot: string
+  snapshot: string,
+  sitemapContext?: string
 ): Promise<PlannerResult> {
   const client = new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
@@ -30,7 +31,7 @@ export async function createPlan(
   });
 
   const processedSnapshot = truncateSnapshot(redactSnapshot(snapshot), 40000);
-  const userPrompt = buildPlannerPrompt(url, goals, processedSnapshot);
+  const userPrompt = buildPlannerPrompt(url, goals, processedSnapshot, sitemapContext);
 
   let lastError: Error | null = null;
   const maxRetries = 2;

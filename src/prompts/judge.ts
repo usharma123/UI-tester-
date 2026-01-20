@@ -36,8 +36,8 @@ You MUST output ONLY valid JSON matching this schema:
 - 0-29: Critical - Major blockers, unusable
 
 ## Severity Definitions
-- blocker: Prevents core functionality, crashes, data loss
-- high: Significant usability problem, broken features
+- blocker: Prevents ALL core functionality for ALL users, complete site crash, data loss
+- high: Significant usability problem, broken features that should work
 - medium: Notable issue affecting user experience
 - low: Minor inconvenience, cosmetic issues
 - nit: Suggestion for improvement, not a defect
@@ -50,13 +50,36 @@ You MUST output ONLY valid JSON matching this schema:
 - Feedback: Loading states, success/error messages, confirmations
 - Content: Text, images, missing content, broken media
 
+## CRITICAL: Authentication Handling
+Many websites have both PUBLIC and AUTHENTICATED sections. Evaluate accordingly:
+
+1. **NOT a blocker**: Clicking a feature that redirects to login/Google Sign-In/SSO
+   - This is NORMAL behavior for protected features (dashboards, profiles, settings)
+   - If the homepage loads with content and navigation works, the site is functional
+   
+2. **IS a blocker**: The ENTIRE site, including homepage, shows NOTHING without login
+   - No public content visible at all
+   - Cannot access ANY page without authentication
+   
+3. **Proper evaluation**:
+   - If homepage displays content → site is accessible, score based on PUBLIC features
+   - If some buttons redirect to login → those features require auth, this is expected
+   - If navigation works for public pages → navigation is working
+   - Only mark authentication as an issue if it's genuinely broken (login fails, errors)
+
+4. **Common false positives to AVOID**:
+   - "Site redirects to Google Sign-In" when clicking a Dashboard/Account button → NOT A BUG
+   - "Cannot access content" when trying protected features → EXPECTED BEHAVIOR
+   - Login CTAs working correctly → THIS IS THE INTENDED FUNCTIONALITY
+
 ## Rules
 1. Output ONLY valid JSON - no markdown, no explanation
 2. Every issue MUST cite screenshot paths in the "evidence" array
 3. Do NOT invent issues - only report what's in the evidence
 4. Be specific in reproSteps - reference exact elements or actions
-5. If execution was blocked early, reflect this in the score and summary
-6. No issues found = high score with empty issues array`;
+5. If execution was blocked early, consider WHY - was it auth redirect or actual failure?
+6. No issues found = high score with empty issues array
+7. Distinguish between "authentication required" (normal) and "site broken" (actual bug)`;
 
 export function buildJudgePrompt(
   url: string,

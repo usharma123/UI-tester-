@@ -133,6 +133,9 @@ async function handleStartRun(request: Request): Promise<Response> {
   }
 }
 
+// Store for heartbeat intervals
+const heartbeatIntervals = new Map<string, Timer>();
+
 function handleSSEStream(runId: string): Response {
   const encoder = new TextEncoder();
 
@@ -156,8 +159,28 @@ function handleSSEStream(runId: string): Response {
           controller.enqueue(encoder.encode(formatSSEMessage(event)));
         }
       }
+      
+      // Start heartbeat to keep connection alive (every 15 seconds)
+      const heartbeat = setInterval(() => {
+        try {
+          // Send SSE comment as heartbeat (won't trigger client event handlers)
+          controller.enqueue(encoder.encode(": heartbeat\n\n"));
+        } catch {
+          // Connection closed, clean up
+          clearInterval(heartbeat);
+          heartbeatIntervals.delete(runId);
+        }
+      }, 15000);
+      
+      heartbeatIntervals.set(runId, heartbeat);
     },
     cancel() {
+      // Clean up heartbeat
+      const heartbeat = heartbeatIntervals.get(runId);
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeatIntervals.delete(runId);
+      }
       activeConnections.delete(runId);
     },
   });
@@ -208,6 +231,8 @@ async function handleGetRun(runId: string): Promise<Response> {
 
 const server = Bun.serve({
   port: PORT,
+  // Increase idle timeout for long-running SSE connections (5 minutes)
+  idleTimeout: 300,
   async fetch(request) {
     const url = new URL(request.url);
     const path = url.pathname;

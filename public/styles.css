@@ -736,6 +736,141 @@ body {
   color: var(--accent);
 }
 
+/* Sitemap Display */
+.sitemap-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.sitemap-section[hidden] {
+  display: none;
+}
+
+.sitemap-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.sitemap-header svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+.sitemap-header span:first-of-type {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.sitemap-source {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  margin-left: auto;
+}
+
+.sitemap-count {
+  background: var(--success-bg);
+  color: var(--success);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.sitemap-container {
+  padding: var(--space-md) var(--space-lg);
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/* Tree visualization */
+.sitemap-tree {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.tree-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.tree-line:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.tree-line.root {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 0.9rem;
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: var(--space-xs);
+}
+
+.tree-line.auth {
+  opacity: 0.5;
+}
+
+.tree-line.auth .tree-name {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.tree-prefix {
+  color: var(--border);
+  user-select: none;
+}
+
+.tree-icon {
+  font-size: 0.9em;
+  width: 1.2em;
+  text-align: center;
+}
+
+.tree-host {
+  color: var(--accent);
+}
+
+.tree-name {
+  color: var(--text-secondary);
+}
+
+.tree-line:hover .tree-name {
+  color: var(--accent);
+}
+
+.tree-priority {
+  font-size: 0.65rem;
+  color: var(--success);
+  background: var(--success-bg);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  margin-left: var(--space-xs);
+}
+
 /* Live Log */
 .live-log {
   background: var(--bg-card);

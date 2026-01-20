@@ -45,6 +45,47 @@ async function runCommand(
   }
 }
 
+/**
+ * Convert our selector format to Playwright-compatible selector
+ * Supports: text:Button, a:Link, button:Submit, role=..., CSS selectors
+ */
+function normalizeSelector(selector: string): string {
+  // Skip @e refs - they're not supported
+  if (selector.startsWith("@e")) {
+    throw new Error(`Element refs like "${selector}" are not supported. Use text or CSS selectors instead.`);
+  }
+  
+  // text:Button Text -> text=Button Text
+  if (selector.startsWith("text:")) {
+    return `text=${selector.slice(5)}`;
+  }
+  
+  // a:Link Text -> a:has-text("Link Text")
+  if (selector.startsWith("a:")) {
+    const linkText = selector.slice(2);
+    return `a:has-text("${linkText}")`;
+  }
+  
+  // button:Submit -> button:has-text("Submit")
+  if (selector.startsWith("button:")) {
+    const buttonText = selector.slice(7);
+    return `button:has-text("${buttonText}")`;
+  }
+  
+  // label:Email -> text=Email (will find the label, then we can interact with associated input)
+  if (selector.startsWith("label:")) {
+    return `text=${selector.slice(6)}`;
+  }
+  
+  // role=button[name="..."] - pass through as-is (Playwright format)
+  if (selector.startsWith("role=")) {
+    return selector;
+  }
+  
+  // Regular CSS selector - pass through
+  return selector;
+}
+
 export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrowser {
   return {
     async open(url: string): Promise<void> {
@@ -55,20 +96,23 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
       return runCommand(["snapshot"], options);
     },
 
-    async click(refOrSelector: string): Promise<void> {
-      await runCommand(["click", refOrSelector], options);
+    async click(selector: string): Promise<void> {
+      const normalizedSelector = normalizeSelector(selector);
+      await runCommand(["click", normalizedSelector], options);
     },
 
-    async fill(refOrSelector: string, text: string): Promise<void> {
-      await runCommand(["fill", refOrSelector, text], options);
+    async fill(selector: string, text: string): Promise<void> {
+      const normalizedSelector = normalizeSelector(selector);
+      await runCommand(["fill", normalizedSelector, text], options);
     },
 
     async press(key: string): Promise<void> {
       await runCommand(["press", key], options);
     },
 
-    async getText(refOrSelector: string): Promise<string> {
-      return runCommand(["getText", refOrSelector], options);
+    async getText(selector: string): Promise<string> {
+      const normalizedSelector = normalizeSelector(selector);
+      return runCommand(["getText", normalizedSelector], options);
     },
 
     async screenshot(path: string): Promise<void> {

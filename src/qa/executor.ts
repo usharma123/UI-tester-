@@ -121,6 +121,18 @@ async function executeStep(
         throw new Error("open step requires a URL in selector field");
       }
       await browser.open(step.selector);
+      
+      // After opening, check if we landed on an auth page (full site requires auth)
+      try {
+        const pageSnapshot = await browser.snapshot();
+        const authCheck = detectAuthPage(pageSnapshot);
+        if (authCheck.isAuthPage) {
+          return `Opened ${step.selector} → Site requires authentication (${authCheck.provider || "login page"})`;
+        }
+      } catch {
+        // Snapshot failed, continue without auth check
+      }
+      
       return `Opened ${step.selector}`;
 
     case "snapshot":
@@ -132,6 +144,18 @@ async function executeStep(
         throw new Error("click step requires selector");
       }
       await browser.click(step.selector);
+      
+      // After click, check if we've been redirected to an auth page
+      try {
+        const postClickSnapshot = await browser.snapshot();
+        const authCheck = detectAuthPage(postClickSnapshot);
+        if (authCheck.isAuthPage) {
+          return `Clicked ${step.selector} → ${formatAuthMessage(authCheck.provider)}`;
+        }
+      } catch {
+        // Snapshot failed, continue without auth check
+      }
+      
       return `Clicked ${step.selector}`;
 
     case "fill":
@@ -178,4 +202,63 @@ function isBlockingError(error: string): boolean {
 
   const lowerError = error.toLowerCase();
   return blockingPatterns.some((pattern) => lowerError.includes(pattern));
+}
+
+// Common auth provider domains and page indicators
+const AUTH_INDICATORS = {
+  domains: [
+    "accounts.google.com",
+    "login.microsoftonline.com",
+    "auth0.com",
+    "okta.com",
+    "login.salesforce.com",
+    "sso.",
+    "signin.",
+    "login.",
+    "auth.",
+    "oauth",
+  ],
+  pageContent: [
+    "sign in with google",
+    "sign in to continue",
+    "log in to your account",
+    "enter your password",
+    "choose an account",
+    "sign in with microsoft",
+    "single sign-on",
+    "authentication required",
+  ],
+};
+
+/**
+ * Check if a snapshot indicates we're on an authentication page
+ */
+export function detectAuthPage(snapshot: string): { isAuthPage: boolean; provider?: string } {
+  const lowerSnapshot = snapshot.toLowerCase();
+  
+  // Check for auth domains in any URLs or text
+  for (const domain of AUTH_INDICATORS.domains) {
+    if (lowerSnapshot.includes(domain)) {
+      return { isAuthPage: true, provider: domain };
+    }
+  }
+  
+  // Check for auth page content
+  for (const content of AUTH_INDICATORS.pageContent) {
+    if (lowerSnapshot.includes(content)) {
+      return { isAuthPage: true, provider: "unknown" };
+    }
+  }
+  
+  return { isAuthPage: false };
+}
+
+/**
+ * Format a message indicating auth redirect was detected
+ */
+export function formatAuthMessage(provider?: string): string {
+  if (provider && provider !== "unknown") {
+    return `Redirected to authentication (${provider}) - this feature requires login`;
+  }
+  return "Redirected to authentication page - this feature requires login";
 }

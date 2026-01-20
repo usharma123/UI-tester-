@@ -146,11 +146,22 @@
                 <p>Capturing initial state</p>
               </div>
             </div>
-            <div class="phase" data-phase="planning">
+            <div class="phase" data-phase="discovery">
               <div class="phase-node">
                 <div class="phase-ring"></div>
                 <div class="phase-dot"></div>
                 <span class="phase-number">02</span>
+              </div>
+              <div class="phase-content">
+                <h3>DISCOVERY</h3>
+                <p>Scanning site structure</p>
+              </div>
+            </div>
+            <div class="phase" data-phase="planning">
+              <div class="phase-node">
+                <div class="phase-ring"></div>
+                <div class="phase-dot"></div>
+                <span class="phase-number">03</span>
               </div>
               <div class="phase-content">
                 <h3>PLANNING</h3>
@@ -161,7 +172,7 @@
               <div class="phase-node">
                 <div class="phase-ring"></div>
                 <div class="phase-dot"></div>
-                <span class="phase-number">03</span>
+                <span class="phase-number">04</span>
               </div>
               <div class="phase-content">
                 <h3>EXECUTION</h3>
@@ -178,7 +189,7 @@
               <div class="phase-node">
                 <div class="phase-ring"></div>
                 <div class="phase-dot"></div>
-                <span class="phase-number">04</span>
+                <span class="phase-number">05</span>
               </div>
               <div class="phase-content">
                 <h3>EVALUATION</h3>
@@ -186,6 +197,19 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Sitemap Display -->
+        <div id="sitemap-section" class="sitemap-section" hidden>
+          <div class="sitemap-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M3 12h18M3 18h18"/>
+            </svg>
+            <span>DISCOVERED PAGES</span>
+            <span id="sitemap-source" class="sitemap-source"></span>
+            <span id="sitemap-count" class="sitemap-count"></span>
+          </div>
+          <div id="sitemap-container" class="sitemap-container"></div>
         </div>
 
         <!-- Live log -->

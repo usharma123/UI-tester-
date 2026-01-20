@@ -242,6 +242,11 @@ function handleSSEEvent(event) {
       log("info", `Captured: ${event.label}`);
       break;
 
+    case "sitemap":
+      displaySitemap(event.urls, event.source, event.totalPages);
+      log("info", `Discovered ${event.totalPages} pages via ${event.source}`);
+      break;
+
     case "plan_created":
       log("info", `Test plan generated: ${event.totalSteps} steps`);
       document.getElementById("step-total").textContent = event.totalSteps;
@@ -331,6 +336,109 @@ function resetPhases() {
   document.getElementById("step-total").textContent = "0";
   stepFill.style.width = "0%";
   progressTimer.textContent = "00:00";
+}
+
+// Sitemap display - builds a tree visualization
+function displaySitemap(urls, source, totalPages) {
+  const sitemapSection = document.getElementById("sitemap-section");
+  const sitemapContainer = document.getElementById("sitemap-container");
+  const sitemapSource = document.getElementById("sitemap-source");
+  const sitemapCount = document.getElementById("sitemap-count");
+  
+  // Show section
+  sitemapSection.hidden = false;
+  
+  // Update header info
+  sitemapSource.textContent = source.toUpperCase();
+  sitemapCount.textContent = `${totalPages} pages`;
+  
+  // Clear existing
+  sitemapContainer.innerHTML = "";
+  
+  // Auth-related path patterns to mark
+  const authPatterns = [
+    "/login", "/signin", "/signup", "/register",
+    "/auth", "/oauth", "/sso",
+    "/admin", "/dashboard", "/account", "/profile", "/settings",
+    "/api/", "/webhook", "/callback",
+    "/logout", "/signout"
+  ];
+  
+  // Build tree structure from URLs
+  const tree = { name: "/", children: {}, isPage: true };
+  let baseHost = "";
+  
+  urls.forEach(url => {
+    try {
+      const parsed = new URL(url.loc);
+      if (!baseHost) baseHost = parsed.hostname;
+      
+      const path = parsed.pathname || "/";
+      const parts = path.split("/").filter(Boolean);
+      
+      let current = tree;
+      parts.forEach((part, idx) => {
+        if (!current.children[part]) {
+          current.children[part] = { 
+            name: part, 
+            children: {}, 
+            isPage: idx === parts.length - 1,
+            priority: url.priority,
+            isAuth: authPatterns.some(p => ("/" + parts.slice(0, idx + 1).join("/")).toLowerCase().includes(p))
+          };
+        }
+        current = current.children[part];
+      });
+    } catch {
+      // Skip invalid URLs
+    }
+  });
+  
+  // Render tree as ASCII diagram
+  const treeEl = document.createElement("div");
+  treeEl.className = "sitemap-tree";
+  
+  // Root node
+  const rootLine = document.createElement("div");
+  rootLine.className = "tree-line root";
+  rootLine.innerHTML = `<span class="tree-icon">🌐</span> <span class="tree-host">${baseHost || "site"}</span>`;
+  treeEl.appendChild(rootLine);
+  
+  // Render children recursively
+  function renderNode(node, prefix, isLast) {
+    const children = Object.values(node.children);
+    children.forEach((child, idx) => {
+      const isLastChild = idx === children.length - 1;
+      const connector = isLastChild ? "└── " : "├── ";
+      const line = document.createElement("div");
+      line.className = "tree-line" + (child.isAuth ? " auth" : "");
+      
+      const icon = child.isAuth ? "🔒" : (Object.keys(child.children).length > 0 ? "📁" : "📄");
+      const priorityBadge = child.priority ? `<span class="tree-priority">${child.priority.toFixed(1)}</span>` : "";
+      
+      line.innerHTML = `<span class="tree-prefix">${prefix}${connector}</span><span class="tree-icon">${icon}</span> <span class="tree-name">${child.name}</span>${priorityBadge}`;
+      
+      if (child.isAuth) {
+        line.title = "Auth-required page (will be skipped)";
+      }
+      
+      treeEl.appendChild(line);
+      
+      // Recurse for children
+      const newPrefix = prefix + (isLastChild ? "    " : "│   ");
+      renderNode(child, newPrefix, isLastChild);
+    });
+  }
+  
+  renderNode(tree, "", true);
+  
+  sitemapContainer.appendChild(treeEl);
+}
+
+// Hide sitemap when resetting
+function hideSitemap() {
+  const sitemapSection = document.getElementById("sitemap-section");
+  sitemapSection.hidden = true;
 }
 
 // Logging
@@ -682,12 +790,14 @@ function showProgress() {
 
 function hideProgress() {
   progressSection.hidden = true;
+  hideSitemap();
 }
 
 function showError(message) {
   errorSection.hidden = false;
   progressSection.hidden = true;
   resultsSection.hidden = true;
+  hideSitemap();
   document.getElementById("error-message").textContent = message;
 }
 
