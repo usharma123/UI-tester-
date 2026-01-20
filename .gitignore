@@ -11,7 +11,7 @@ dist/
 # Generated outputs
 reports/
 screenshots/
-
+.claude 
 # OS files
 .DS_Store
 Thumbs.db

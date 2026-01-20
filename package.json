@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "qa": "bun run src/cli.ts",
+    "web": "bun run src/web/server.ts",
     "test": "bun test"
   },
   "dependencies": {
     "openai": "^4.77.0",
     "zod": "^3.24.1",
-    "execa": "^9.5.2"
+    "execa": "^9.5.2",
+    "convex": "^1.17.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AXIOM // UI QA Laboratory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Scan lines overlay -->
+  <div class="scanlines"></div>
+
+  <!-- Grid background -->
+  <div class="grid-bg"></div>
+
+  <div class="app">
+    <!-- Sidebar with history -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <div class="sidebar-title">
+          <span class="label">TEST ARCHIVE</span>
+          <span class="count" id="history-count">0</span>
+        </div>
+      </div>
+      <div id="history-list" class="history-list">
+        <div class="history-empty">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+          </div>
+          <p>No test records</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="header">
+        <div class="logo-container">
+          <div class="logo-icon">
+            <svg viewBox="0 0 48 48" fill="none">
+              <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+              <circle cx="24" cy="24" r="14" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+              <circle cx="24" cy="24" r="8" stroke="currentColor" stroke-width="1.5"/>
+              <circle cx="24" cy="24" r="3" fill="currentColor"/>
+              <line x1="24" y1="4" x2="24" y2="10" stroke="currentColor" stroke-width="1"/>
+              <line x1="24" y1="38" x2="24" y2="44" stroke="currentColor" stroke-width="1"/>
+              <line x1="4" y1="24" x2="10" y2="24" stroke="currentColor" stroke-width="1"/>
+              <line x1="38" y1="24" x2="44" y2="24" stroke="currentColor" stroke-width="1"/>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <h1>AXIOM</h1>
+            <p class="tagline">UI Quality Analysis System</p>
+          </div>
+        </div>
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-text">SYSTEM READY</span>
+        </div>
+      </header>
+
+      <!-- URL Input Form -->
+      <section class="url-form-section">
+        <form id="url-form" class="url-form">
+          <div class="form-header">
+            <span class="form-label">TARGET URL</span>
+            <span class="form-hint">Enter the URL to analyze</span>
+          </div>
+          <div class="input-group">
+            <div class="input-wrapper">
+              <span class="input-prefix">https://</span>
+              <input
+                type="url"
+                id="url-input"
+                placeholder="example.com"
+                required
+                autocomplete="url"
+              >
+              <div class="input-glow"></div>
+            </div>
+            <button type="submit" id="submit-btn">
+              <span class="btn-text">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+                INITIATE SCAN
+              </span>
+              <span class="btn-loading" hidden>
+                <span class="spinner"></span>
+                SCANNING
+              </span>
+            </button>
+          </div>
+          <div class="options-row">
+            <label for="goals-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              TEST PARAMETERS
+            </label>
+            <input
+              type="text"
+              id="goals-input"
+              placeholder="homepage UX + primary CTA + form validation + keyboard"
+              value="homepage UX + primary CTA + form validation + keyboard"
+            >
+          </div>
+        </form>
+      </section>
+
+      <!-- Progress Section -->
+      <section id="progress-section" class="progress-section" hidden>
+        <div class="progress-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            ANALYSIS IN PROGRESS
+          </h2>
+          <div class="progress-timer" id="progress-timer">00:00</div>
+        </div>
+
+        <div class="phases-container">
+          <div class="phases-track"></div>
+          <div class="phases">
+            <div class="phase" data-phase="init">
+              <div class="phase-node">
+                <div class="phase-ring"></div>
+                <div class="phase-dot"></div>
+                <span class="phase-number">01</span>
+              </div>
+              <div class="phase-content">
+                <h3>INITIALIZE</h3>
+                <p>Capturing initial state</p>
+              </div>
+            </div>
+            <div class="phase" data-phase="planning">
+              <div class="phase-node">
+                <div class="phase-ring"></div>
+                <div class="phase-dot"></div>
+                <span class="phase-number">02</span>
+              </div>
+              <div class="phase-content">
+                <h3>PLANNING</h3>
+                <p>Generating test sequence</p>
+              </div>
+            </div>
+            <div class="phase" data-phase="execution">
+              <div class="phase-node">
+                <div class="phase-ring"></div>
+                <div class="phase-dot"></div>
+                <span class="phase-number">03</span>
+              </div>
+              <div class="phase-content">
+                <h3>EXECUTION</h3>
+                <p>Running test protocols</p>
+                <div class="step-progress" hidden>
+                  <div class="step-bar">
+                    <div class="step-fill" id="step-fill"></div>
+                  </div>
+                  <span class="step-text"><span id="step-current">0</span>/<span id="step-total">0</span></span>
+                </div>
+              </div>
+            </div>
+            <div class="phase" data-phase="evaluation">
+              <div class="phase-node">
+                <div class="phase-ring"></div>
+                <div class="phase-dot"></div>
+                <span class="phase-number">04</span>
+              </div>
+              <div class="phase-content">
+                <h3>EVALUATION</h3>
+                <p>Analyzing results</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live log -->
+        <div class="live-log">
+          <div class="log-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+            </svg>
+            <span>SYSTEM LOG</span>
+            <div class="log-status">
+              <span class="log-dot"></span>
+              LIVE
+            </div>
+          </div>
+          <div id="log-container" class="log-container"></div>
+        </div>
+      </section>
+
+      <!-- Results Section -->
+      <section id="results-section" class="results-section" hidden>
+        <div class="results-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            ANALYSIS COMPLETE
+          </h2>
+        </div>
+
+        <!-- Score Gauge -->
+        <div class="score-container">
+          <div class="score-gauge">
+            <svg viewBox="0 0 200 200">
+              <!-- Outer decorative rings -->
+              <circle cx="100" cy="100" r="95" fill="none" stroke="currentColor" stroke-width="0.5" opacity="0.1"/>
+              <circle cx="100" cy="100" r="85" fill="none" stroke="currentColor" stroke-width="0.5" opacity="0.2"/>
+
+              <!-- Tick marks -->
+              <g class="tick-marks">
+                <line x1="100" y1="15" x2="100" y2="25" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                <line x1="100" y1="175" x2="100" y2="185" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                <line x1="15" y1="100" x2="25" y2="100" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                <line x1="175" y1="100" x2="185" y2="100" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+              </g>
+
+              <!-- Background track -->
+              <circle class="score-bg" cx="100" cy="100" r="70" />
+
+              <!-- Score arc -->
+              <circle id="score-circle" class="score-fill" cx="100" cy="100" r="70" />
+
+              <!-- Center decoration -->
+              <circle cx="100" cy="100" r="50" fill="none" stroke="currentColor" stroke-width="0.5" opacity="0.1"/>
+            </svg>
+            <div class="score-value">
+              <span class="score-label-top">QUALITY INDEX</span>
+              <span id="score-number" class="score-number">--</span>
+              <span class="score-label-bottom">/ 100</span>
+            </div>
+          </div>
+          <p id="score-summary" class="score-summary"></p>
+        </div>
+
+        <!-- Tested Flows -->
+        <div class="tested-flows">
+          <div class="section-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            <h3>TESTED PROTOCOLS</h3>
+          </div>
+          <ul id="flows-list"></ul>
+        </div>
+
+        <!-- Issues -->
+        <div class="issues-container">
+          <div class="section-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3>ANOMALIES DETECTED</h3>
+            <span class="issues-badge" id="issues-count">0</span>
+          </div>
+          <div id="issues-list" class="issues-list"></div>
+        </div>
+
+        <!-- Screenshots Gallery -->
+        <div class="screenshots-container">
+          <div class="section-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            <h3>VISUAL CAPTURES</h3>
+          </div>
+          <div id="screenshots-gallery" class="screenshots-gallery"></div>
+        </div>
+      </section>
+
+      <!-- Error Section -->
+      <section id="error-section" class="error-section" hidden>
+        <div class="error-content">
+          <div class="error-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+          <h2>SYSTEM FAULT</h2>
+          <p id="error-message"></p>
+          <button id="retry-btn" class="retry-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            RETRY SEQUENCE
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Screenshot Modal -->
+  <div id="screenshot-modal" class="modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <span id="modal-label" class="modal-label"></span>
+        <button class="modal-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <img id="modal-image" src="" alt="Screenshot">
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
