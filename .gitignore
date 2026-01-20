@@ -12,6 +12,7 @@ dist/
 reports/
 screenshots/
 .claude 
+.playwright-mcp
 # OS files
 .DS_Store
 Thumbs.db
