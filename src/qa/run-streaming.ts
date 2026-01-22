@@ -1,11 +1,12 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Config } from "../config.js";
-import type { Report, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry, Step, PagePlan } from "./types.js";
+import type { Report, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry, Step, PagePlan, AuditEntry } from "./types.js";
 import type { ProgressCallback, SSEEvent, QAPhase, PageStatus } from "../web/types.js";
 import { createAgentBrowser, type AgentBrowser } from "../agentBrowser.js";
 import { createPlan, createPagePlan } from "./planner.js";
 import { evaluateEvidence } from "./judge.js";
+import { getViewportInfo, runDomAudit, trySetViewport } from "./audits.js";
 import { ensureDir } from "../utils/fs.js";
 import { getTimestamp } from "../utils/time.js";
 import { fetchSitemap, crawlSitemap, formatSitemapForPlanner, type SitemapResult } from "../utils/sitemap.js";
@@ -41,7 +42,15 @@ function emitPhaseComplete(callback: ProgressCallback, phase: QAPhase) {
 }
 
 // Check if step type should trigger screenshot
-function shouldScreenshotAfter(stepType: string): boolean {
+function shouldScreenshotBefore(stepType: string, captureBeforeAfter: boolean): boolean {
+  if (!captureBeforeAfter) return false;
+  return ["click", "fill", "press"].includes(stepType);
+}
+
+function shouldScreenshotAfter(stepType: string, captureBeforeAfter: boolean): boolean {
+  if (captureBeforeAfter) {
+    return ["click", "open", "fill", "press"].includes(stepType);
+  }
   return ["click", "open"].includes(stepType);
 }
 
@@ -195,6 +204,9 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
   const screenshotDir = join(tmpdir(), `qa-screenshots-${timestamp}`);
   await ensureDir(screenshotDir);
 
+  const runAudits: AuditEntry[] = [];
+  let initialScreenshotPath: string | null = null;
+
   const browser = createAgentBrowser({
     timeout: config.browserTimeout,
     navigationTimeout: config.navigationTimeout,
@@ -243,9 +255,65 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     const initialSnapshot = await browser.snapshot();
 
     // Take initial screenshot and upload
-    const initialScreenshotPath = join(screenshotDir, "00-initial.png");
+    initialScreenshotPath = join(screenshotDir, "00-initial.png");
     await browser.screenshot(initialScreenshotPath);
-    await uploadAndEmitScreenshot(initialScreenshotPath, 0, "Initial page load");
+    await uploadAndEmitScreenshot(initialScreenshotPath, -1, "Initial page load");
+
+    if (config.auditsEnabled) {
+      emit(onProgress, { type: "log", message: "Running DOM audits...", level: "info" });
+      try {
+        const originalViewport = await getViewportInfo(browser);
+        let resizeSupported = true;
+
+        for (const viewport of config.viewports) {
+          try {
+            const { applied } = await trySetViewport(browser, viewport.width, viewport.height);
+            if (!applied) {
+              resizeSupported = false;
+              break;
+            }
+          } catch {
+            resizeSupported = false;
+            break;
+          }
+
+          try {
+            const auditScreenshot = join(screenshotDir, `audit-${viewport.label}.png`);
+            await browser.screenshot(auditScreenshot);
+            await uploadAndEmitScreenshot(auditScreenshot, -1, `Audit ${viewport.label}`);
+            const audit = await runDomAudit(browser, url, viewport.label);
+            runAudits.push({ ...audit, screenshotPath: auditScreenshot });
+          } catch (error) {
+            emit(onProgress, {
+              type: "log",
+              message: `Audit failed for ${viewport.label}: ${error}`,
+              level: "warn",
+            });
+          }
+        }
+
+        if (!resizeSupported) {
+          emit(onProgress, {
+            type: "log",
+            message: "Viewport resize unsupported; falling back to default audit.",
+            level: "warn",
+          });
+          const auditScreenshot = join(screenshotDir, "audit-default.png");
+          await browser.screenshot(auditScreenshot);
+          await uploadAndEmitScreenshot(auditScreenshot, -1, "Audit default");
+          const audit = await runDomAudit(browser, url, "default");
+          runAudits.push({ ...audit, screenshotPath: auditScreenshot });
+        }
+
+        await trySetViewport(browser, originalViewport.width, originalViewport.height);
+      } catch (error) {
+        emit(onProgress, {
+          type: "log",
+          message: `DOM audits failed: ${error}`,
+          level: "warn",
+        });
+      }
+    }
 
     emitPhaseComplete(onProgress, "init");
 
@@ -473,6 +541,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     const snapshots = merged.snapshots;
     const errors = merged.errors;
     const screenshotMap = merged.screenshotMap;
+    const pageAudits = merged.audits;
 
     // Calculate global step index for additional steps
     let globalStepIndex = executedSteps.length > 0
@@ -518,11 +587,57 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       };
 
       try {
-        const result = await executeStep(browser, step, screenshotDir, globalStepIndex);
+        if (shouldScreenshotBefore(step.type, config.captureBeforeAfterScreenshots)) {
+          const filename = `step-${String(screenshotCounter).padStart(2, "0")}-before.png`;
+          const filepath = join(screenshotDir, filename);
+          try {
+            await browser.screenshot(filepath);
+            screenshotMap[filepath] = globalStepIndex;
+            await uploadAndEmitScreenshot(filepath, globalStepIndex, `Before ${step.type}`);
+            screenshotCounter++;
+          } catch {
+            // Ignore screenshot errors
+          }
+        }
+
+        let result: string | undefined;
+        let retryAttempt = 0;
+        const maxRetries = 2;
+        let currentStep = { ...step };
+        let lastStepError: string | undefined;
+
+        while (retryAttempt <= maxRetries) {
+          try {
+            result = await executeStep(browser, currentStep, screenshotDir, globalStepIndex);
+            lastStepError = undefined;
+            break;
+          } catch (stepError) {
+            const errorMsg = stepError instanceof Error ? stepError.message : String(stepError);
+            lastStepError = errorMsg;
+
+            const multiMatch = isMultipleMatchError(errorMsg);
+            if (multiMatch.matched && currentStep.selector && retryAttempt < maxRetries) {
+              retryAttempt++;
+              const newSelector = makeFirstSelector(currentStep.selector);
+              emit(onProgress, {
+                type: "log",
+                message: `Selector matched ${multiMatch.count} elements, retrying with: ${newSelector}`,
+                level: "warn",
+              });
+              currentStep = { ...currentStep, selector: newSelector };
+            } else {
+              throw stepError;
+            }
+          }
+        }
+
+        if (lastStepError) {
+          throw new Error(lastStepError);
+        }
         executedStep.result = result;
 
         let stepScreenshotUrl: string | undefined;
-        if (shouldScreenshotAfter(step.type)) {
+        if (shouldScreenshotAfter(step.type, config.captureBeforeAfterScreenshots)) {
           const filename = `step-${String(screenshotCounter).padStart(2, "0")}-after.png`;
           const filepath = join(screenshotDir, filename);
           try {
@@ -549,9 +664,11 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
         executedStep.error = errorMessage;
         errors.push({ stepIndex: globalStepIndex, error: errorMessage });
 
-        if (isBlockingError(errorMessage)) {
+        if (isBlockingError(errorMessage) || config.strictMode) {
           executedStep.status = "blocked";
           blocked = true;
+        } else if (isSkippableError(errorMessage)) {
+          emit(onProgress, { type: "log", message: `Step skipped: ${errorMessage}`, level: "warn" });
         }
 
         emit(onProgress, {
@@ -566,13 +683,24 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       globalStepIndex++;
     }
 
+    const allAudits = [...runAudits, ...pageAudits];
     const evidence: Evidence = {
       plan,
       executedSteps,
       snapshots,
       errors,
       screenshotMap,
+      audits: allAudits.length > 0 ? allAudits : undefined,
     };
+
+    if (initialScreenshotPath) {
+      evidence.screenshotMap[initialScreenshotPath] = -1;
+    }
+    for (const audit of allAudits) {
+      if (audit.screenshotPath) {
+        evidence.screenshotMap[audit.screenshotPath] = -1;
+      }
+    }
 
     emitPhaseComplete(onProgress, "execution");
 
@@ -606,6 +734,12 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     // Also update evidence screenshot paths
     const evidenceWithUrls: Evidence = {
       ...evidence,
+      audits: evidence.audits?.map((audit) => ({
+        ...audit,
+        screenshotPath: audit.screenshotPath
+          ? screenshotUrlMap[audit.screenshotPath] || audit.screenshotPath
+          : undefined,
+      })),
       screenshotMap: Object.fromEntries(
         Object.entries(evidence.screenshotMap).map(([path, idx]) => [
           screenshotUrlMap[path] || path,

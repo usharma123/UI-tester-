@@ -79,13 +79,15 @@ Many websites have both PUBLIC and AUTHENTICATED sections. Evaluate accordingly:
 4. Be specific in reproSteps - reference exact elements or actions
 5. If execution was blocked early, consider WHY - was it auth redirect or actual failure?
 6. No issues found = high score with empty issues array
-7. Distinguish between "authentication required" (normal) and "site broken" (actual bug)`;
+7. Distinguish between "authentication required" (normal) and "site broken" (actual bug)
+8. Use DOM audit signals (missing labels, small touch targets, overflow) to surface issues, but ALWAYS tie them to screenshots or step evidence`;
 
 export function buildJudgePrompt(
   url: string,
   executedSteps: string,
   snapshots: string,
   errors: string,
+  auditSummary: string,
   screenshotPaths: string[],
   evidenceFile: string
 ): string {
@@ -102,6 +104,9 @@ ${snapshots}
 
 ### Errors Encountered
 ${errors}
+
+### DOM Audit Summary
+${auditSummary}
 
 ### Available Screenshots
 ${screenshotPaths.map((p) => `- ${p}`).join("\n")}

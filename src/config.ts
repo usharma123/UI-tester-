@@ -13,12 +13,22 @@ export interface Config {
   maxPages: number;
   stepsPerPage: number;
   parallelBrowsers: number;  // Number of concurrent browser instances for parallel testing
+  auditsEnabled: boolean;
+  strictMode: boolean;
+  captureBeforeAfterScreenshots: boolean;
+  viewports: ViewportConfig[];
 }
 
 export interface CLIOptions {
   goals?: string;
   maxSteps?: number;
   model?: string;
+}
+
+export interface ViewportConfig {
+  label: string;
+  width: number;
+  height: number;
 }
 
 const DEFAULT_CONFIG = {
@@ -35,7 +45,41 @@ const DEFAULT_CONFIG = {
   maxPages: 50,                 // Maximum pages to test from sitemap
   stepsPerPage: 5,              // Max steps per page in per-page testing mode
   parallelBrowsers: 5,          // Number of concurrent browser instances (1-10)
+  auditsEnabled: true,
+  strictMode: false,
+  captureBeforeAfterScreenshots: true,
+  viewports: [
+    { label: "desktop", width: 1365, height: 768 },
+    { label: "tablet", width: 820, height: 1180 },
+    { label: "mobile", width: 390, height: 844 },
+  ],
 };
+
+function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
+  if (value === undefined) return defaultValue;
+  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+function parseViewports(value: string | undefined, defaults: ViewportConfig[]): ViewportConfig[] {
+  if (!value) return defaults;
+  const parsed = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [labelPart, sizePart] = entry.includes(":") ? entry.split(":") : ["", entry];
+      const match = sizePart.match(/(\\d+)x(\\d+)/i);
+      if (!match) return null;
+      const width = parseInt(match[1], 10);
+      const height = parseInt(match[2], 10);
+      if (!width || !height) return null;
+      const label = labelPart.trim() || `${width}x${height}`;
+      return { label, width, height };
+    })
+    .filter((entry): entry is ViewportConfig => Boolean(entry));
+
+  return parsed.length > 0 ? parsed : defaults;
+}
 
 export function loadConfig(cliOptions: CLIOptions = {}): Config {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -62,5 +106,9 @@ export function loadConfig(cliOptions: CLIOptions = {}): Config {
     maxPages: parseInt(process.env.MAX_PAGES ?? String(DEFAULT_CONFIG.maxPages), 10),
     stepsPerPage: parseInt(process.env.STEPS_PER_PAGE ?? String(DEFAULT_CONFIG.stepsPerPage), 10),
     parallelBrowsers: Math.min(10, Math.max(1, parseInt(process.env.PARALLEL_BROWSERS ?? String(DEFAULT_CONFIG.parallelBrowsers), 10))),
+    auditsEnabled: parseBoolean(process.env.AUDITS_ENABLED, DEFAULT_CONFIG.auditsEnabled),
+    strictMode: parseBoolean(process.env.STRICT_MODE, DEFAULT_CONFIG.strictMode),
+    captureBeforeAfterScreenshots: parseBoolean(process.env.CAPTURE_BEFORE_AFTER, DEFAULT_CONFIG.captureBeforeAfterScreenshots),
+    viewports: parseViewports(process.env.VIEWPORTS, DEFAULT_CONFIG.viewports),
   };
 }

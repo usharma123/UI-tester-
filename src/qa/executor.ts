@@ -6,13 +6,23 @@ import { ensureDir } from "../utils/fs.js";
 export interface ExecutorOptions {
   screenshotDir: string;
   maxSteps: number;
+  strictMode?: boolean;
+  captureBeforeAfterScreenshots?: boolean;
 }
 
 function shouldSnapshotAfter(stepType: string): boolean {
   return ["click", "fill", "press"].includes(stepType);
 }
 
-function shouldScreenshotAfter(stepType: string): boolean {
+function shouldScreenshotBefore(stepType: string, captureBeforeAfter: boolean): boolean {
+  if (!captureBeforeAfter) return false;
+  return ["click", "fill", "press"].includes(stepType);
+}
+
+function shouldScreenshotAfter(stepType: string, captureBeforeAfter: boolean): boolean {
+  if (captureBeforeAfter) {
+    return ["click", "open", "fill", "press"].includes(stepType);
+  }
   return ["click", "open"].includes(stepType);
 }
 
@@ -70,6 +80,10 @@ export async function executePlan(
     };
 
     try {
+      if (shouldScreenshotBefore(step.type, Boolean(options.captureBeforeAfterScreenshots))) {
+        await takeScreenshot(i, "-before");
+      }
+
       const result = await executeStep(browser, step, options.screenshotDir, i);
       executedStep.result = result;
 
@@ -77,7 +91,7 @@ export async function executePlan(
         await takeSnapshot(i);
       }
 
-      if (shouldScreenshotAfter(step.type)) {
+      if (shouldScreenshotAfter(step.type, Boolean(options.captureBeforeAfterScreenshots))) {
         const screenshotPath = await takeScreenshot(i, "-after");
         executedStep.screenshotPath = screenshotPath;
       }
@@ -90,7 +104,7 @@ export async function executePlan(
       const errorScreenshot = await takeScreenshot(i, "-error");
       executedStep.screenshotPath = errorScreenshot;
 
-      if (isBlockingError(errorMessage)) {
+      if (isBlockingError(errorMessage) || options.strictMode) {
         executedStep.status = "blocked";
         blocked = true;
         console.error(`Execution blocked at step ${i}: ${errorMessage}`);

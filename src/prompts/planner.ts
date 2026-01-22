@@ -56,7 +56,8 @@ DO NOT use @e1, @e2, etc. refs - they are not supported!
 7. Take screenshots after major navigations and interactions
 8. Use safe dummy data for forms: test@example.com, "Test User", etc.
 9. NEVER submit payment forms or enter real credentials
-10. Test keyboard navigation by pressing Tab multiple times
+10. Test keyboard navigation by pressing Tab multiple times and capture a screenshot while focus is visible
+11. If you test a form, use getText to capture visible validation/error copy
 
 ## Authentication & Login Handling
 IMPORTANT: Many websites have both public and authenticated sections. This is NORMAL behavior.
@@ -75,7 +76,8 @@ IMPORTANT: Many websites have both public and authenticated sections. This is NO
 4. Navigation: Test public navigation links, skip anything labeled "Login", "Dashboard", "My Account"
 5. Forms: Test public forms (contact, newsletter) - skip login/signup forms
 6. Keyboard: Test Tab navigation (8-12 presses) to check focus visibility
-7. Error states: Try submitting empty public forms if present`;
+7. Error states: Try submitting empty public forms if present and capture error copy
+8. Content clarity: Prefer links/buttons with specific text; flag vague CTAs (\"Learn more\") if duplicates are present`;
 
 export function buildPlannerPrompt(url: string, goals: string, snapshot: string, sitemapContext?: string): string {
   const sitemapSection = sitemapContext
@@ -172,6 +174,7 @@ DO NOT use @e1, @e2, etc. refs - they are not supported!
 6. Use safe dummy data for forms: test@example.com, "Test User", etc.
 7. NEVER submit payment forms or enter real credentials
 8. Focus on testing interactive elements visible on the page
+9. If you trigger validation, use getText to capture error copy
 
 ## What to Test (in priority order)
 1. Buttons - click visible buttons to verify they respond

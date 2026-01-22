@@ -67,12 +67,60 @@ export interface ErrorEntry {
   error: string;
 }
 
+export interface ViewportInfo {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+}
+
+export interface DomAuditSample {
+  selector: string;
+  text?: string;
+}
+
+export interface DomAuditSummary {
+  imagesMissingAlt: number;
+  inputsMissingLabel: number;
+  buttonsMissingLabel: number;
+  linksGenericText: number;
+  emptyHeadings: number;
+  headingOrderIssues: number;
+  h1Count: number;
+  smallTouchTargets: number;
+  htmlLangMissing: boolean;
+  horizontalOverflowPx: number;
+}
+
+export interface DomAuditSamples {
+  imagesMissingAlt: DomAuditSample[];
+  inputsMissingLabel: DomAuditSample[];
+  buttonsMissingLabel: DomAuditSample[];
+  linksGenericText: DomAuditSample[];
+  emptyHeadings: DomAuditSample[];
+  headingOrderIssues: DomAuditSample[];
+  smallTouchTargets: DomAuditSample[];
+}
+
+export interface DomAuditResult {
+  pageUrl: string;
+  label: string;
+  viewport: ViewportInfo;
+  summary: DomAuditSummary;
+  samples: DomAuditSamples;
+  timestamp: number;
+}
+
+export interface AuditEntry extends DomAuditResult {
+  screenshotPath?: string;
+}
+
 export interface Evidence {
   plan: Plan;
   executedSteps: ExecutedStep[];
   snapshots: SnapshotEntry[];
   errors: ErrorEntry[];
   screenshotMap: Record<string, number>;
+  audits?: AuditEntry[];
 }
 
 export interface RunContext {

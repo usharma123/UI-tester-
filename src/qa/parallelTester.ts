@@ -3,8 +3,9 @@ import type { Config } from "../config.js";
 import type { AgentBrowser } from "../agentBrowser.js";
 import type { BrowserPool } from "../utils/browserPool.js";
 import type { SitemapUrl, PageStatus } from "../web/types.js";
-import type { Step, ExecutedStep, SnapshotEntry, ErrorEntry } from "./types.js";
+import type { Step, ExecutedStep, SnapshotEntry, ErrorEntry, AuditEntry } from "./types.js";
 import { createPagePlan } from "./planner.js";
+import { runDomAudit } from "./audits.js";
 
 export interface PageTestResult {
   url: string;
@@ -15,6 +16,7 @@ export interface PageTestResult {
   errors: ErrorEntry[];
   screenshotPaths: string[];
   screenshotUrl?: string;
+  audits: AuditEntry[];
   stepsExecuted: number;
   error?: string;
 }
@@ -29,7 +31,15 @@ export interface ParallelTestCallbacks {
 }
 
 // Check if step type should trigger screenshot
-function shouldScreenshotAfter(stepType: string): boolean {
+function shouldScreenshotBefore(stepType: string, captureBeforeAfter: boolean): boolean {
+  if (!captureBeforeAfter) return false;
+  return ["click", "fill", "press"].includes(stepType);
+}
+
+function shouldScreenshotAfter(stepType: string, captureBeforeAfter: boolean): boolean {
+  if (captureBeforeAfter) {
+    return ["click", "open", "fill", "press"].includes(stepType);
+  }
   return ["click", "open"].includes(stepType);
 }
 
@@ -171,6 +181,7 @@ async function testSinglePage(
   const snapshots: SnapshotEntry[] = [];
   const errors: ErrorEntry[] = [];
   const screenshotPaths: string[] = [];
+  const audits: AuditEntry[] = [];
   let localStepIndex = startingStepIndex;
   let pageStatus: PageStatus = "success";
   let pageError: string | undefined;
@@ -213,6 +224,15 @@ async function testSinglePage(
     const pageSnapshot = await browser.snapshot();
     snapshots.push({ stepIndex: localStepIndex - 1, content: pageSnapshot });
 
+    if (config.auditsEnabled) {
+      try {
+        const audit = await runDomAudit(browser, pageUrl, "page");
+        audits.push({ ...audit, screenshotPath: pageScreenshotPath });
+      } catch (error) {
+        callbacks.onLog(`[Page ${pageIndex}] Audit failed: ${error}`, "warn");
+      }
+    }
+
     // 4. Generate mini-plan for this page
     const { plan: pagePlan } = await createPagePlan(config, pageUrl, pageSnapshot, config.stepsPerPage);
 
@@ -232,6 +252,18 @@ async function testSinglePage(
       };
 
       try {
+        if (shouldScreenshotBefore(step.type, config.captureBeforeAfterScreenshots)) {
+          const filename = `page-${String(pageIndex).padStart(2, "0")}-step-${String(stepIdx).padStart(2, "0")}-before.png`;
+          const filepath = join(screenshotDir, filename);
+          try {
+            await browser.screenshot(filepath);
+            screenshotPaths.push(filepath);
+            await callbacks.uploadScreenshot(filepath, localStepIndex, `Before ${step.type}`);
+          } catch {
+            // Ignore screenshot errors
+          }
+        }
+
         let result: string | undefined;
         let retryAttempt = 0;
         const maxRetries = 2;
@@ -282,7 +314,7 @@ async function testSinglePage(
         }
 
         // Take screenshot after clicks
-        if (shouldScreenshotAfter(step.type)) {
+        if (shouldScreenshotAfter(step.type, config.captureBeforeAfterScreenshots)) {
           const filename = `page-${String(pageIndex).padStart(2, "0")}-step-${String(stepIdx).padStart(2, "0")}-after.png`;
           const filepath = join(screenshotDir, filename);
           try {
@@ -302,7 +334,7 @@ async function testSinglePage(
         executedStep.error = errorMessage;
         errors.push({ stepIndex: localStepIndex, error: errorMessage });
 
-        if (isBlockingError(errorMessage)) {
+        if (isBlockingError(errorMessage) || config.strictMode) {
           executedStep.status = "blocked";
           blocked = true;
           callbacks.onLog(`[Page ${pageIndex}] Execution blocked: ${errorMessage}`, "error");
@@ -318,10 +350,11 @@ async function testSinglePage(
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    pageStatus = isBlockingError(errorMessage) ? "failed" : "skipped";
+    const blocking = isBlockingError(errorMessage) || config.strictMode;
+    pageStatus = blocking ? "failed" : "skipped";
     pageError = errorMessage;
 
-    if (isBlockingError(errorMessage)) {
+    if (blocking) {
       callbacks.onLog(`[Page ${pageIndex}] Execution blocked at ${pageUrl}: ${errorMessage}`, "error");
     } else {
       callbacks.onLog(`[Page ${pageIndex}] Skipping ${pageUrl}: ${errorMessage}`, "warn");
@@ -339,6 +372,7 @@ async function testSinglePage(
     errors,
     screenshotPaths,
     screenshotUrl: pageScreenshotUrl,
+    audits,
     stepsExecuted: stepsExecutedOnPage,
     error: pageError,
   };
@@ -437,12 +471,14 @@ export function mergeParallelResults(results: PageTestResult[]): {
   snapshots: SnapshotEntry[];
   errors: ErrorEntry[];
   screenshotMap: Record<string, number>;
+  audits: AuditEntry[];
   pageProgress: { tested: number; skipped: number; failed: number };
 } {
   const executedSteps: ExecutedStep[] = [];
   const snapshots: SnapshotEntry[] = [];
   const errors: ErrorEntry[] = [];
   const screenshotMap: Record<string, number> = {};
+  const audits: AuditEntry[] = [];
   let tested = 0;
   let skipped = 0;
   let failed = 0;
@@ -452,11 +488,17 @@ export function mergeParallelResults(results: PageTestResult[]): {
     executedSteps.push(...result.executedSteps);
     snapshots.push(...result.snapshots);
     errors.push(...result.errors);
+    audits.push(...result.audits);
 
     // Build screenshot map
     for (const step of result.executedSteps) {
       if (step.screenshotPath) {
         screenshotMap[step.screenshotPath] = step.index;
+      }
+    }
+    for (const path of result.screenshotPaths) {
+      if (!(path in screenshotMap)) {
+        screenshotMap[path] = -1;
       }
     }
 
@@ -480,6 +522,7 @@ export function mergeParallelResults(results: PageTestResult[]): {
     snapshots,
     errors,
     screenshotMap,
+    audits,
     pageProgress: { tested, skipped, failed },
   };
 }

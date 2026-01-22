@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Config } from "../config.js";
-import type { Evidence, Report } from "./types.js";
+import type { Evidence, Report, AuditEntry, DomAuditSample } from "./types.js";
 import { safeParseReport } from "./schemas.js";
 import { JUDGE_SYSTEM_PROMPT, buildJudgePrompt } from "../prompts/judge.js";
 import { truncateSnapshot } from "../utils/redact.js";
@@ -46,6 +46,64 @@ function formatErrors(evidence: Evidence): string {
   return evidence.errors.map((e) => `Step ${e.stepIndex}: ${e.error}`).join("\n");
 }
 
+function formatAuditSamples(samples: DomAuditSample[]): string {
+  if (!samples.length) return "none";
+  return samples.map((s) => `${s.selector}${s.text ? ` (${s.text})` : ""}`).join("; ");
+}
+
+function hasAuditIssues(audit: AuditEntry): boolean {
+  const summary = audit.summary;
+  return (
+    summary.imagesMissingAlt > 0 ||
+    summary.inputsMissingLabel > 0 ||
+    summary.buttonsMissingLabel > 0 ||
+    summary.linksGenericText > 0 ||
+    summary.emptyHeadings > 0 ||
+    summary.headingOrderIssues > 0 ||
+    summary.smallTouchTargets > 0 ||
+    summary.htmlLangMissing ||
+    summary.horizontalOverflowPx > 0
+  );
+}
+
+function formatAudits(audits: AuditEntry[] | undefined): string {
+  if (!audits || audits.length === 0) {
+    return "No DOM audits available.";
+  }
+
+  const MAX_AUDITS = 10;
+  const withIssues = audits.filter(hasAuditIssues);
+  const selected = (withIssues.length > 0 ? withIssues : audits).slice(0, MAX_AUDITS);
+  const truncatedCount = (withIssues.length > 0 ? withIssues : audits).length - selected.length;
+
+  const formatted = selected
+    .map((audit) => {
+      const summary = audit.summary;
+      const samples = audit.samples;
+      return [
+        `--- Audit: ${audit.label} @ ${audit.pageUrl} (${audit.viewport.width}x${audit.viewport.height}) ---`,
+        `Missing alt: ${summary.imagesMissingAlt} | Missing labels: ${summary.inputsMissingLabel} | Buttons w/o label: ${summary.buttonsMissingLabel}`,
+        `Generic link text: ${summary.linksGenericText} | Empty headings: ${summary.emptyHeadings} | H1 count: ${summary.h1Count}`,
+        `Heading order issues: ${summary.headingOrderIssues} | Small targets: ${summary.smallTouchTargets} | Lang missing: ${summary.htmlLangMissing}`,
+        `Horizontal overflow px: ${summary.horizontalOverflowPx}`,
+        `Samples alt: ${formatAuditSamples(samples.imagesMissingAlt)}`,
+        `Samples labels: ${formatAuditSamples(samples.inputsMissingLabel)}`,
+        `Samples buttons: ${formatAuditSamples(samples.buttonsMissingLabel)}`,
+        `Samples links: ${formatAuditSamples(samples.linksGenericText)}`,
+        `Samples headings: ${formatAuditSamples(samples.emptyHeadings)}`,
+        `Samples heading order: ${formatAuditSamples(samples.headingOrderIssues)}`,
+        `Samples touch targets: ${formatAuditSamples(samples.smallTouchTargets)}`,
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  if (truncatedCount > 0) {
+    return `${formatted}\n\n... ${truncatedCount} more audit results omitted`;
+  }
+
+  return formatted;
+}
+
 export async function evaluateEvidence(
   config: Config,
   evidence: Evidence,
@@ -59,6 +117,7 @@ export async function evaluateEvidence(
   const executedStepsStr = formatExecutedSteps(evidence);
   const snapshotsStr = formatSnapshots(evidence);
   const errorsStr = formatErrors(evidence);
+  const auditsStr = formatAudits(evidence.audits);
   const screenshotPaths = Object.keys(evidence.screenshotMap);
 
   const userPrompt = buildJudgePrompt(
@@ -66,6 +125,7 @@ export async function evaluateEvidence(
     executedStepsStr,
     snapshotsStr,
     errorsStr,
+    auditsStr,
     screenshotPaths,
     evidenceFilePath
   );

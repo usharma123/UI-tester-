@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import type { Config } from "../config.js";
-import type { RunContext, Report, Evidence } from "./types.js";
+import type { RunContext, Report, Evidence, AuditEntry } from "./types.js";
 import { createAgentBrowser, type AgentBrowser } from "../agentBrowser.js";
 import { createPlan } from "./planner.js";
 import { executePlan } from "./executor.js";
 import { evaluateEvidence } from "./judge.js";
+import { getViewportInfo, runDomAudit, trySetViewport } from "./audits.js";
 import { writeJson, ensureDir, getRunDir } from "../utils/fs.js";
 import { getTimestamp, formatDuration } from "../utils/time.js";
 
@@ -38,6 +39,8 @@ export async function runQA(config: Config, url: string): Promise<RunResult> {
 
   let evidence: Evidence | null = null;
   let report: Report | null = null;
+  const audits: AuditEntry[] = [];
+  let initialScreenshot: string | null = null;
 
   try {
     console.log(`\n[QA] Starting test for: ${url}`);
@@ -49,9 +52,51 @@ export async function runQA(config: Config, url: string): Promise<RunResult> {
     await browser.open(url);
     const initialSnapshot = await browser.snapshot();
 
-    const initialScreenshot = join(context.screenshotDir, "00-initial.png");
+    initialScreenshot = join(context.screenshotDir, "00-initial.png");
     await browser.screenshot(initialScreenshot);
     console.log(`[QA] Initial screenshot saved: ${initialScreenshot}`);
+
+    if (config.auditsEnabled) {
+      console.log("\n[QA] Phase 1b: Running DOM audits...");
+      try {
+        const originalViewport = await getViewportInfo(browser);
+        let resizeSupported = true;
+
+        for (const viewport of config.viewports) {
+          try {
+            const { applied } = await trySetViewport(browser, viewport.width, viewport.height);
+            if (!applied) {
+              resizeSupported = false;
+              break;
+            }
+          } catch {
+            resizeSupported = false;
+            break;
+          }
+
+          try {
+            const auditScreenshot = join(context.screenshotDir, `audit-${viewport.label}.png`);
+            await browser.screenshot(auditScreenshot);
+            const audit = await runDomAudit(browser, url, viewport.label);
+            audits.push({ ...audit, screenshotPath: auditScreenshot });
+          } catch (error) {
+            console.warn(`[QA] Audit failed for ${viewport.label}: ${error}`);
+          }
+        }
+
+        if (!resizeSupported) {
+          console.warn("[QA] Viewport resize unsupported; falling back to default viewport audit.");
+          const auditScreenshot = join(context.screenshotDir, "audit-default.png");
+          await browser.screenshot(auditScreenshot);
+          const audit = await runDomAudit(browser, url, "default");
+          audits.push({ ...audit, screenshotPath: auditScreenshot });
+        }
+
+        await trySetViewport(browser, originalViewport.width, originalViewport.height);
+      } catch (error) {
+        console.warn(`[QA] DOM audits failed: ${error}`);
+      }
+    }
 
     console.log("\n[QA] Phase 2: Planning test steps...");
     const { plan } = await createPlan(config, url, config.goals, initialSnapshot);
@@ -65,7 +110,21 @@ export async function runQA(config: Config, url: string): Promise<RunResult> {
     evidence = await executePlan(browser, plan, {
       screenshotDir: context.screenshotDir,
       maxSteps: config.maxSteps,
+      strictMode: config.strictMode,
+      captureBeforeAfterScreenshots: config.captureBeforeAfterScreenshots,
     });
+
+    if (initialScreenshot) {
+      evidence.screenshotMap[initialScreenshot] = -1;
+    }
+    if (audits.length > 0) {
+      evidence.audits = audits;
+      for (const audit of audits) {
+        if (audit.screenshotPath) {
+          evidence.screenshotMap[audit.screenshotPath] = -1;
+        }
+      }
+    }
 
     const successCount = evidence.executedSteps.filter((s) => s.status === "success").length;
     const failedCount = evidence.executedSteps.filter((s) => s.status === "failed").length;

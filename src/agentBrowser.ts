@@ -43,11 +43,21 @@ export interface AgentBrowser {
   press(key: string): Promise<void>;
   getText(refOrSelector: string): Promise<string>;
   screenshot(path: string): Promise<void>;
+  eval(script: string): Promise<string>;
+  evalJson<T>(script: string): Promise<T>;
   getLinks(): Promise<LinkInfo[]>;
   close(): Promise<void>;
 }
 
 const DEFAULT_TIMEOUT = 30000;
+
+function parseJsonResult(raw: string): unknown {
+  let parsed = JSON.parse(raw);
+  if (typeof parsed === "string") {
+    parsed = JSON.parse(parsed);
+  }
+  return parsed;
+}
 
 async function runCommand(
   args: string[],
@@ -203,17 +213,21 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
       await runCommandWithRetry(["screenshot", path], options, 2);
     },
 
+    async eval(script: string): Promise<string> {
+      return runCommandWithRetry(["eval", script], options, 1);
+    },
+
+    async evalJson<T>(script: string): Promise<T> {
+      const result = await runCommandWithRetry(["eval", script], options, 1);
+      return parseJsonResult(result) as T;
+    },
+
     async getLinks(): Promise<LinkInfo[]> {
       // Execute JavaScript to extract all links from the page
       // Use single-line script to avoid issues with shell escaping
       const script = `JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(a=>({href:a.href,text:(a.textContent||'').trim().slice(0,100)})))`;
       try {
-        const result = await runCommandWithRetry(["eval", script], options, 1);
-        // Parse the JSON result - may need to parse twice if double-encoded
-        let parsed = JSON.parse(result);
-        if (typeof parsed === "string") {
-          parsed = JSON.parse(parsed);
-        }
+        const parsed = await parseJsonResult(await runCommandWithRetry(["eval", script], options, 1));
         return parsed as LinkInfo[];
       } catch (error) {
         // If eval command fails, return empty array
