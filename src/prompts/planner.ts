@@ -78,11 +78,15 @@ IMPORTANT: Many websites have both public and authenticated sections. This is NO
 7. Error states: Try submitting empty public forms if present`;
 
 export function buildPlannerPrompt(url: string, goals: string, snapshot: string, sitemapContext?: string): string {
-  const sitemapSection = sitemapContext 
-    ? `## Discovered Site Pages
+  const sitemapSection = sitemapContext
+    ? `## Discovered Site Pages (VERIFIED URLS)
 ${sitemapContext}
 
-IMPORTANT: Use these discovered URLs for "open" steps to test different pages. Prioritize pages that appear publicly accessible (no auth-related paths like /login, /dashboard, /admin).
+CRITICAL: You MUST ONLY use URLs from this list for "open" steps. DO NOT make up or guess URLs.
+- If a page is not in this list, do NOT try to navigate to it
+- Do NOT infer URLs from link text (e.g., seeing "Blog" does not mean /blog exists)
+- Only use the EXACT URLs provided above
+- If you need to test a page not in this list, skip it
 
 `
     : "";
@@ -103,13 +107,15 @@ Create a test plan (max 20 steps) to thoroughly test this page according to the 
 
 STRATEGY:
 1. Start with a baseline screenshot of the homepage
-2. Use the discovered sitemap URLs to navigate to different public pages
+2. ONLY use the discovered sitemap URLs (listed above) to navigate - DO NOT make up URLs
 3. For each page: screenshot it, test key interactions, then move to the next
 4. Test keyboard navigation on the homepage
 5. Skip any auth-required pages
 
-IMPORTANT REMINDERS:
-- For "open" steps: selector MUST be the full URL (e.g., "${url}" or a URL from the sitemap)
+CRITICAL URL RULES:
+- For "open" steps: selector MUST be an EXACT URL from the sitemap list above
+- DO NOT guess or fabricate URLs (e.g., don't assume /blog exists just because you see a "Blog" link)
+- If the sitemap is empty or only has the homepage, focus on testing the current page without navigation
 - For "click" steps: use text selectors like "text:Button Name" or "a:Link Text"
 - DO NOT use @e1, @e2 refs - they don't work!
 

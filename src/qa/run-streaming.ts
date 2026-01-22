@@ -8,7 +8,7 @@ import { createPlan, createPagePlan } from "./planner.js";
 import { evaluateEvidence } from "./judge.js";
 import { ensureDir } from "../utils/fs.js";
 import { getTimestamp } from "../utils/time.js";
-import { fetchSitemap, formatSitemapForPlanner, type SitemapResult } from "../utils/sitemap.js";
+import { fetchSitemap, crawlSitemap, formatSitemapForPlanner, type SitemapResult } from "../utils/sitemap.js";
 import { createBrowserPool } from "../utils/browserPool.js";
 import { testPagesInParallel, mergeParallelResults, type ParallelTestCallbacks } from "./parallelTester.js";
 import * as convex from "../web/convex.js";
@@ -252,36 +252,60 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     // === Phase 2: Discovery ===
     emitPhaseStart(onProgress, "discovery");
     emit(onProgress, { type: "log", message: "Discovering site structure...", level: "info" });
-    
+
     let sitemap: SitemapResult;
     try {
       sitemap = await fetchSitemap(url, 15000);
-      
-      // If no pages found, use common paths fallback
+
+      emit(onProgress, {
+        type: "log",
+        message: `Static discovery found ${sitemap.urls.length} pages via ${sitemap.source}`,
+        level: "info",
+      });
+
+      // If static discovery found very few pages, try dynamic crawling
+      if (sitemap.urls.length < 3) {
+        emit(onProgress, {
+          type: "log",
+          message: "Few pages found, crawling links for more...",
+          level: "info",
+        });
+
+        try {
+          const crawledSitemap = await crawlSitemap(browser, url, config.maxPages);
+
+          // Use crawled results if it found more pages
+          if (crawledSitemap.urls.length > sitemap.urls.length) {
+            emit(onProgress, {
+              type: "log",
+              message: `Link crawling found ${crawledSitemap.urls.length} pages`,
+              level: "info",
+            });
+            sitemap = crawledSitemap;
+          }
+        } catch (crawlError) {
+          emit(onProgress, {
+            type: "log",
+            message: `Link crawling failed: ${crawlError}`,
+            level: "warn",
+          });
+        }
+      }
+
+      // If still no pages found, fall back to base URL only
       if (sitemap.urls.length === 0) {
         const baseUrl = url.replace(/\/$/, "");
         sitemap = {
-          urls: [
-            { loc: baseUrl },
-            { loc: `${baseUrl}/about` },
-            { loc: `${baseUrl}/pricing` },
-            { loc: `${baseUrl}/features` },
-            { loc: `${baseUrl}/contact` },
-            { loc: `${baseUrl}/blog` },
-            { loc: `${baseUrl}/docs` },
-            { loc: `${baseUrl}/faq` },
-            { loc: `${baseUrl}/terms` },
-            { loc: `${baseUrl}/privacy` },
-          ],
-          source: "crawled",
+          urls: [{ loc: baseUrl }],
+          source: "none",
         };
         emit(onProgress, {
           type: "log",
-          message: "No sitemap found, using common page paths",
+          message: "No pages discovered, testing homepage only",
           level: "info",
         });
       }
-      
+
       emit(onProgress, {
         type: "sitemap",
         urls: sitemap.urls.map(u => ({ loc: u.loc, lastmod: u.lastmod, priority: u.priority })),
@@ -290,7 +314,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       });
       emit(onProgress, {
         type: "log",
-        message: `Found ${sitemap.urls.length} pages via ${sitemap.source}`,
+        message: `Final discovery: ${sitemap.urls.length} pages via ${sitemap.source}`,
         level: "info",
       });
     } catch (error) {
@@ -301,7 +325,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       });
       sitemap = { urls: [{ loc: url }], source: "none" };
     }
-    
+
     emitPhaseComplete(onProgress, "discovery");
 
     // === Phase 3: Planning ===
@@ -310,8 +334,9 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     
     // Include sitemap info in the planning context
     const sitemapContext = formatSitemapForPlanner(sitemap);
+    const sitemapUrls = sitemap.urls.map(u => u.loc);
 
-    const { plan } = await createPlan(config, url, goals, initialSnapshot, sitemapContext);
+    const { plan } = await createPlan(config, url, goals, initialSnapshot, sitemapContext, sitemapUrls);
 
     emit(onProgress, {
       type: "plan_created",

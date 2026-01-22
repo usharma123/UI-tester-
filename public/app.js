@@ -31,6 +31,7 @@ let eventSource = null;
 let screenshots = [];
 let timerInterval = null;
 let startTime = null;
+let currentReport = null;
 
 // Initialize
 document.addEventListener("DOMContentLoaded", () => {
@@ -54,6 +55,9 @@ function setupEventListeners() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeModal();
   });
+
+  // Copy all issues button
+  document.getElementById("copy-all-btn").addEventListener("click", handleCopyAllIssues);
 }
 
 // Timer functions
@@ -470,6 +474,9 @@ function clearLogs() {
 function showResults(report, evidence) {
   resultsSection.hidden = false;
 
+  // Store report for copy functionality
+  currentReport = report;
+
   // Score
   const score = report.score;
   const scoreCircle = document.getElementById("score-circle");
@@ -518,6 +525,24 @@ function showResults(report, evidence) {
     });
   });
 
+  // Add click handlers for copy prompt buttons
+  issuesList.querySelectorAll(".copy-prompt-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const index = parseInt(btn.dataset.issueIndex, 10);
+      const issue = report.issues[index];
+      handleCopySingleIssue(issue, report.url || "", btn);
+    });
+  });
+
+  // Show/hide copy-all section based on issues count
+  const copyAllSection = document.getElementById("copy-all-section");
+  if (report.issues.length > 0) {
+    copyAllSection.hidden = false;
+  } else {
+    copyAllSection.hidden = true;
+  }
+
   // Screenshots gallery
   const gallery = document.getElementById("screenshots-gallery");
   gallery.innerHTML = screenshots
@@ -563,7 +588,7 @@ function animateNumber(element, start, end, duration) {
 
 function createIssueCard(issue, index) {
   return `
-    <div class="issue-card">
+    <div class="issue-card" data-issue-index="${index}">
       <div class="issue-header">
         <span class="severity-badge ${issue.severity}">${issue.severity}</span>
         <span class="category-badge">${issue.category}</span>
@@ -601,6 +626,15 @@ function createIssueCard(issue, index) {
         `
             : ""
         }
+
+        <div class="issue-actions">
+          <button class="copy-prompt-btn" data-issue-index="${index}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+            </svg>
+            COPY LLM PROMPT
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -809,9 +843,13 @@ function resetUI() {
   clearLogs();
   resetPhases();
   screenshots = [];
+  currentReport = null;
   resultsSection.hidden = true;
   errorSection.hidden = true;
   progressSection.hidden = true;
+
+  // Hide copy-all section
+  document.getElementById("copy-all-section").hidden = true;
 
   // Clear active history items
   historyList.querySelectorAll(".history-item").forEach((item) => {
@@ -830,6 +868,187 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+// Toast notifications
+function showToast(message, type = "success") {
+  const container = document.getElementById("toast-container");
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  // Auto-dismiss after 3 seconds
+  setTimeout(() => {
+    toast.classList.add("toast-exit");
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// LLM Prompt Generation
+function generateSingleIssuePrompt(issue, url) {
+  const reproSteps = issue.reproSteps
+    .map((step, idx) => `${idx + 1}. ${step}`)
+    .join("\n");
+
+  return `I need help fixing a UI issue on my website.
+
+## Context
+- URL: ${url}
+- Issue Category: ${issue.category}
+- Severity: ${issue.severity}
+
+## Issue: ${issue.title}
+
+### Steps to Reproduce
+${reproSteps}
+
+### Expected Behavior
+${issue.expected}
+
+### Actual Behavior
+${issue.actual}
+
+### Suggested Fix
+${issue.suggestedFix}
+
+Please analyze this issue and provide:
+1. The likely root cause
+2. Specific code changes needed to fix it
+3. Any additional improvements you'd recommend`;
+}
+
+function generateAllIssuesPrompt(report) {
+  if (!report) return "";
+
+  const flowsList = report.testedFlows.map((flow) => `- ${flow}`).join("\n");
+
+  const issuesText = report.issues
+    .map((issue, idx) => {
+      const reproSteps = issue.reproSteps
+        .map((step, stepIdx) => `${stepIdx + 1}. ${step}`)
+        .join("\n");
+
+      return `### Issue ${idx + 1}: ${issue.title}
+**Category:** ${issue.category}
+**Severity:** ${issue.severity}
+
+**Steps to Reproduce:**
+${reproSteps}
+
+**Expected Behavior:**
+${issue.expected}
+
+**Actual Behavior:**
+${issue.actual}
+
+**Suggested Fix:**
+${issue.suggestedFix}`;
+    })
+    .join("\n\n---\n\n");
+
+  return `I need help fixing multiple UI issues found during QA testing.
+
+## Website Context
+- URL: ${report.url || "N/A"}
+- Overall Score: ${report.score}/100
+- Summary: ${report.summary}
+
+## Tested Flows
+${flowsList}
+
+## Issues Found (${report.issues.length} total)
+
+${issuesText}
+
+Please analyze these issues and provide:
+1. A prioritized fix order based on severity and dependencies
+2. Specific code changes for each issue
+3. Any patterns you notice that might indicate systemic problems
+4. Recommendations for preventing similar issues in the future`;
+}
+
+// Clipboard functions
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    // Fallback for older browsers
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      return true;
+    } catch {
+      return false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }
+}
+
+async function handleCopySingleIssue(issue, url, button) {
+  const prompt = generateSingleIssuePrompt(issue, url);
+  const success = await copyToClipboard(prompt);
+
+  if (success) {
+    button.classList.add("copied");
+    button.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M5 13l4 4L19 7"/>
+      </svg>
+      COPIED!
+    `;
+    showToast("LLM prompt copied to clipboard!", "success");
+
+    setTimeout(() => {
+      button.classList.remove("copied");
+      button.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+        </svg>
+        COPY LLM PROMPT
+      `;
+    }, 2000);
+  } else {
+    showToast("Failed to copy to clipboard", "error");
+  }
+}
+
+async function handleCopyAllIssues() {
+  if (!currentReport) return;
+
+  const prompt = generateAllIssuesPrompt(currentReport);
+  const success = await copyToClipboard(prompt);
+  const button = document.getElementById("copy-all-btn");
+
+  if (success) {
+    button.classList.add("copied");
+    button.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M5 13l4 4L19 7"/>
+      </svg>
+      COPIED!
+    `;
+    showToast("All issues copied to clipboard!", "success");
+
+    setTimeout(() => {
+      button.classList.remove("copied");
+      button.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+        </svg>
+        COPY ALL ISSUES
+      `;
+    }, 2000);
+  } else {
+    showToast("Failed to copy to clipboard", "error");
+  }
 }
 
 // Make openModal available globally for inline onclick handlers

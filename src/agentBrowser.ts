@@ -30,6 +30,11 @@ export function isRetryableError(error: Error): boolean {
   );
 }
 
+export interface LinkInfo {
+  href: string;
+  text: string;
+}
+
 export interface AgentBrowser {
   open(url: string): Promise<void>;
   snapshot(): Promise<string>;
@@ -38,6 +43,7 @@ export interface AgentBrowser {
   press(key: string): Promise<void>;
   getText(refOrSelector: string): Promise<string>;
   screenshot(path: string): Promise<void>;
+  getLinks(): Promise<LinkInfo[]>;
   close(): Promise<void>;
 }
 
@@ -195,6 +201,27 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
     async screenshot(path: string): Promise<void> {
       // Screenshots can fail transiently, use retry
       await runCommandWithRetry(["screenshot", path], options, 2);
+    },
+
+    async getLinks(): Promise<LinkInfo[]> {
+      // Execute JavaScript to extract all links from the page
+      // Use single-line script to avoid issues with shell escaping
+      const script = `JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(a=>({href:a.href,text:(a.textContent||'').trim().slice(0,100)})))`;
+      try {
+        const result = await runCommandWithRetry(["eval", script], options, 1);
+        // Parse the JSON result - may need to parse twice if double-encoded
+        let parsed = JSON.parse(result);
+        if (typeof parsed === "string") {
+          parsed = JSON.parse(parsed);
+        }
+        return parsed as LinkInfo[];
+      } catch (error) {
+        // If eval command fails, return empty array
+        if (options.debug) {
+          console.log(`[agent-browser] getLinks failed: ${error}`);
+        }
+        return [];
+      }
     },
 
     async close(): Promise<void> {

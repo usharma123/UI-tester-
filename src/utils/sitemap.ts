@@ -3,6 +3,8 @@
  * Fetches and parses sitemap.xml to discover all pages on a website
  */
 
+import type { AgentBrowser, LinkInfo } from "../agentBrowser.js";
+
 export interface SitemapUrl {
   loc: string;
   lastmod?: string;
@@ -84,29 +86,11 @@ function parseSitemapFromRobots(robotsTxt: string): string[] {
 }
 
 /**
- * Extract common page paths from a URL
+ * Get only the base URL as fallback (no fabricated pages)
  */
-function getCommonPaths(baseUrl: string): string[] {
+function getBaseUrlOnly(baseUrl: string): string[] {
   const base = baseUrl.replace(/\/$/, "");
-  return [
-    base,
-    `${base}/about`,
-    `${base}/about-us`,
-    `${base}/contact`,
-    `${base}/pricing`,
-    `${base}/features`,
-    `${base}/services`,
-    `${base}/products`,
-    `${base}/blog`,
-    `${base}/news`,
-    `${base}/faq`,
-    `${base}/help`,
-    `${base}/support`,
-    `${base}/terms`,
-    `${base}/privacy`,
-    `${base}/team`,
-    `${base}/careers`,
-  ];
+  return [base];
 }
 
 /**
@@ -151,14 +135,14 @@ function sortUrlsByPriority(urls: SitemapUrl[], baseUrl: string): SitemapUrl[] {
  * Filter URLs to only include public, testable pages
  */
 function filterPublicUrls(urls: SitemapUrl[], baseUrl: string): SitemapUrl[] {
-  const baseHost = new URL(baseUrl).hostname;
-  
+  const baseHost = normalizeHostname(new URL(baseUrl).hostname);
+
   return urls.filter((url) => {
     try {
       const parsed = new URL(url.loc);
-      
-      // Must be same domain
-      if (parsed.hostname !== baseHost) return false;
+
+      // Must be same domain (allow www/non-www variations)
+      if (normalizeHostname(parsed.hostname) !== baseHost) return false;
       
       // Skip auth-related pages
       const path = parsed.pathname.toLowerCase();
@@ -188,10 +172,10 @@ export async function fetchSitemap(baseUrl: string, timeoutMs = 10000): Promise<
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
-  // Helper to return common paths fallback
-  const getCommonPathsFallback = (): SitemapResult => ({
-    urls: getCommonPaths(base).map((loc) => ({ loc })),
-    source: "crawled",
+  // Helper to return base URL only fallback (no fabricated pages)
+  const getBaseUrlFallback = (): SitemapResult => ({
+    urls: getBaseUrlOnly(base).map((loc) => ({ loc })),
+    source: "none",
   });
   
   try {
@@ -291,13 +275,193 @@ export async function fetchSitemap(baseUrl: string, timeoutMs = 10000): Promise<
     }
     
     // Fallback: Return common paths to try
-    return getCommonPathsFallback();
+    return getBaseUrlFallback();
   } catch (error) {
     // Complete failure - still return common paths so we have something to test
-    return getCommonPathsFallback();
+    return getBaseUrlFallback();
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+/**
+ * URL patterns to skip during link crawling
+ */
+const SKIP_PATTERNS = [
+  // Auth pages
+  "/login", "/signin", "/signup", "/register", "/auth", "/oauth",
+  "/admin", "/dashboard", "/account", "/profile", "/settings",
+  "/logout", "/signout", "/sso",
+  // Non-HTML file extensions
+  ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp",
+  ".zip", ".tar", ".gz", ".exe", ".dmg",
+  ".xml", ".json", ".rss", ".atom",
+  ".css", ".js", ".woff", ".woff2", ".ttf", ".eot",
+  // API/system paths
+  "/api/", "/webhook", "/callback", "/_next/", "/_nuxt/",
+  // External protocols
+  "javascript:", "mailto:", "tel:", "data:",
+];
+
+/**
+ * Check if a URL should be skipped during crawling
+ */
+function shouldSkipUrl(url: string): boolean {
+  const lowerUrl = url.toLowerCase();
+  return SKIP_PATTERNS.some((pattern) => lowerUrl.includes(pattern));
+}
+
+/**
+ * Normalize a URL for deduplication
+ * Removes trailing slashes, fragments, and common query params
+ */
+function normalizeUrlForDedup(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // Remove fragment
+    parsed.hash = "";
+    // Remove common tracking params
+    const trackingParams = ["utm_source", "utm_medium", "utm_campaign", "ref", "source"];
+    trackingParams.forEach((param) => parsed.searchParams.delete(param));
+    // Normalize path (remove trailing slash except for root)
+    if (parsed.pathname !== "/" && parsed.pathname.endsWith("/")) {
+      parsed.pathname = parsed.pathname.slice(0, -1);
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Normalize hostname for comparison (handle www/non-www)
+ */
+function normalizeHostname(hostname: string): string {
+  return hostname.replace(/^www\./, "").toLowerCase();
+}
+
+/**
+ * Filter and deduplicate discovered links
+ */
+function filterDiscoveredLinks(links: LinkInfo[], baseUrl: string): string[] {
+  const baseHost = normalizeHostname(new URL(baseUrl).hostname);
+  const seen = new Set<string>();
+  const filtered: string[] = [];
+
+  for (const link of links) {
+    try {
+      const parsed = new URL(link.href);
+
+      // Must be same domain (allow www/non-www variations)
+      if (normalizeHostname(parsed.hostname) !== baseHost) continue;
+
+      // Must be http/https
+      if (!["http:", "https:"].includes(parsed.protocol)) continue;
+
+      // Skip auth/file/system URLs
+      if (shouldSkipUrl(link.href)) continue;
+
+      // Skip hash-only links
+      if (parsed.pathname === "/" && parsed.hash && !parsed.search) continue;
+
+      // Normalize and deduplicate
+      const normalized = normalizeUrlForDedup(link.href);
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+
+      filtered.push(normalized);
+    } catch {
+      // Skip invalid URLs
+    }
+  }
+
+  return filtered;
+}
+
+/**
+ * Dynamically discover pages by crawling links from the current page
+ * Used as fallback when sitemap.xml is not available
+ */
+export async function crawlSitemap(
+  browser: AgentBrowser,
+  baseUrl: string,
+  maxPages: number = 20,
+  maxDepth: number = 2
+): Promise<SitemapResult> {
+  const base = baseUrl.replace(/\/$/, "");
+  const baseHost = new URL(base).hostname;
+
+  // Track discovered URLs and their depths
+  const discovered = new Map<string, number>(); // url -> depth discovered at
+  const toVisit: Array<{ url: string; depth: number }> = [];
+
+  // Start with the current page (homepage)
+  const normalizedBase = normalizeUrlForDedup(base);
+  discovered.set(normalizedBase, 0);
+
+  try {
+    // Get links from the current page (already opened by caller)
+    const initialLinks = await browser.getLinks();
+    const filteredLinks = filterDiscoveredLinks(initialLinks, base);
+
+    // Add discovered links to our collection
+    for (const url of filteredLinks) {
+      if (!discovered.has(url) && discovered.size < maxPages) {
+        discovered.set(url, 1);
+        if (maxDepth > 1) {
+          toVisit.push({ url, depth: 1 });
+        }
+      }
+    }
+
+    // Crawl additional pages if depth > 1 and we haven't hit maxPages
+    while (toVisit.length > 0 && discovered.size < maxPages) {
+      const { url, depth } = toVisit.shift()!;
+
+      // Don't go deeper than maxDepth
+      if (depth >= maxDepth) continue;
+
+      try {
+        // Navigate to the page
+        await browser.open(url);
+
+        // Get links from this page
+        const pageLinks = await browser.getLinks();
+        const newLinks = filterDiscoveredLinks(pageLinks, base);
+
+        // Add new discoveries
+        for (const newUrl of newLinks) {
+          if (!discovered.has(newUrl) && discovered.size < maxPages) {
+            discovered.set(newUrl, depth + 1);
+            if (depth + 1 < maxDepth) {
+              toVisit.push({ url: newUrl, depth: depth + 1 });
+            }
+          }
+        }
+      } catch {
+        // Skip pages that fail to load
+      }
+    }
+  } catch (error) {
+    // If initial crawl fails, just return the base URL
+    if (discovered.size === 0) {
+      discovered.set(normalizedBase, 0);
+    }
+  }
+
+  // Convert to SitemapUrl array with priorities based on depth
+  const urls: SitemapUrl[] = Array.from(discovered.entries()).map(([loc, depth]) => ({
+    loc,
+    priority: Math.max(0.1, 1.0 - depth * 0.3), // Higher priority for shallower pages
+  }));
+
+  // Sort by priority (homepage first, then by depth)
+  const sorted = sortUrlsByPriority(urls, base);
+
+  return {
+    urls: sorted.slice(0, maxPages),
+    source: "crawled",
+  };
 }
 
 /**

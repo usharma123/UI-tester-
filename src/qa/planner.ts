@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Config } from "../config.js";
-import type { Plan, PagePlan } from "./types.js";
+import type { Plan, PagePlan, Step } from "./types.js";
 import { safeParsePlan, safeParsePagePlan } from "./schemas.js";
 import { PLANNER_SYSTEM_PROMPT, buildPlannerPrompt, PAGE_TEST_SYSTEM_PROMPT, buildPageTestPrompt } from "../prompts/planner.js";
 import { redactSnapshot, truncateSnapshot } from "../utils/redact.js";
@@ -8,6 +8,61 @@ import { redactSnapshot, truncateSnapshot } from "../utils/redact.js";
 export interface PlannerResult {
   plan: Plan;
   rawResponse: string;
+}
+
+/**
+ * Validate and filter URLs in plan steps against the sitemap
+ * This prevents the LLM from fabricating URLs that don't exist
+ */
+function validatePlanUrls(plan: Plan, baseUrl: string, sitemapUrls: string[]): Plan {
+  const baseHost = new URL(baseUrl).hostname;
+  const validUrls = new Set([baseUrl, ...sitemapUrls]);
+
+  // Also add normalized versions (with/without trailing slash)
+  for (const url of sitemapUrls) {
+    validUrls.add(url.replace(/\/$/, ""));
+    validUrls.add(url.replace(/\/$/, "") + "/");
+  }
+  validUrls.add(baseUrl.replace(/\/$/, ""));
+  validUrls.add(baseUrl.replace(/\/$/, "") + "/");
+
+  const validatedSteps: Step[] = [];
+
+  for (const step of plan.steps) {
+    if (step.type === "open" && step.selector) {
+      try {
+        const stepUrl = new URL(step.selector);
+
+        // Must be same domain
+        if (stepUrl.hostname !== baseHost) {
+          console.warn(`[Planner] Skipping cross-domain URL: ${step.selector}`);
+          continue;
+        }
+
+        // Check if URL is in sitemap or is the base URL
+        const normalizedStepUrl = step.selector.replace(/\/$/, "");
+        if (!validUrls.has(step.selector) && !validUrls.has(normalizedStepUrl)) {
+          // URL was fabricated by LLM - skip it
+          console.warn(`[Planner] Skipping fabricated URL (not in sitemap): ${step.selector}`);
+          continue;
+        }
+
+        validatedSteps.push(step);
+      } catch {
+        // Invalid URL - skip
+        console.warn(`[Planner] Skipping invalid URL: ${step.selector}`);
+        continue;
+      }
+    } else {
+      // Non-open steps pass through
+      validatedSteps.push(step);
+    }
+  }
+
+  return {
+    ...plan,
+    steps: validatedSteps,
+  };
 }
 
 function extractJson(text: string): string {
@@ -23,7 +78,8 @@ export async function createPlan(
   url: string,
   goals: string,
   snapshot: string,
-  sitemapContext?: string
+  sitemapContext?: string,
+  sitemapUrls?: string[]
 ): Promise<PlannerResult> {
   const client = new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
@@ -64,8 +120,13 @@ export async function createPlan(
       const validated = safeParsePlan(parsed);
 
       if (validated.success) {
+        // Validate URLs in the plan against the sitemap to prevent fabricated URLs
+        const validatedPlan = sitemapUrls && sitemapUrls.length > 0
+          ? validatePlanUrls(validated.data, url, sitemapUrls)
+          : validated.data;
+
         return {
-          plan: validated.data,
+          plan: validatedPlan,
           rawResponse,
         };
       }
