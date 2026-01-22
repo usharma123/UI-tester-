@@ -13,6 +13,7 @@ reports/
 screenshots/
 .claude 
 .playwright-mcp
+.pnpm-store/
 # OS files
 .DS_Store
 Thumbs.db

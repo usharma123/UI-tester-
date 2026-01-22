@@ -1,0 +1,150 @@
+import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
+
+interface ScoreGaugeProps {
+  score: number;
+  summary: string;
+}
+
+export function ScoreGauge({ score, summary }: ScoreGaugeProps) {
+  const [displayScore, setDisplayScore] = useState(0);
+
+  // Animate score number
+  useEffect(() => {
+    const duration = 1500;
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      setDisplayScore(Math.round(score * easeOut));
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
+
+    requestAnimationFrame(animate);
+  }, [score]);
+
+  // Calculate stroke dash offset (circumference = 2 * PI * r = 2 * PI * 80 = 502.65)
+  const circumference = 502.65;
+  const offset = circumference - (score / 100) * circumference;
+
+  const colorClass =
+    score >= 80
+      ? "text-emerald-400"
+      : score >= 50
+        ? "text-amber-400"
+        : "text-red-400";
+
+  return (
+    <div className="flex items-center gap-10 p-10 bg-card border border-border rounded-2xl relative overflow-hidden">
+      {/* Background accent */}
+      <div
+        className={cn(
+          "absolute top-0 left-0 right-0 h-0.5 opacity-60",
+          score >= 80
+            ? "bg-gradient-to-r from-transparent via-emerald-400 to-transparent"
+            : score >= 50
+              ? "bg-gradient-to-r from-transparent via-amber-400 to-transparent"
+              : "bg-gradient-to-r from-transparent via-red-400 to-transparent"
+        )}
+      />
+      <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-radial from-emerald-400/5 to-transparent opacity-50 rounded-full -translate-y-1/2 translate-x-1/4" />
+
+      {/* Score gauge */}
+      <div className="relative w-48 h-48 shrink-0">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 180 180">
+          {/* Gradient definitions */}
+          <defs>
+            <linearGradient
+              id="scoreGradient"
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
+            >
+              <stop
+                offset="0%"
+                className={cn(
+                  score >= 80
+                    ? "text-emerald-300"
+                    : score >= 50
+                      ? "text-amber-300"
+                      : "text-red-300"
+                )}
+                stopColor="currentColor"
+              />
+              <stop
+                offset="100%"
+                className={cn(
+                  score >= 80
+                    ? "text-emerald-500"
+                    : score >= 50
+                      ? "text-amber-500"
+                      : "text-red-500"
+                )}
+                stopColor="currentColor"
+              />
+            </linearGradient>
+          </defs>
+
+          {/* Background circle */}
+          <circle
+            cx="90"
+            cy="90"
+            r="80"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="12"
+            className="text-muted"
+          />
+
+          {/* Score circle */}
+          <circle
+            cx="90"
+            cy="90"
+            r="80"
+            fill="none"
+            stroke="url(#scoreGradient)"
+            strokeWidth="12"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            className="transition-all duration-[1.5s] ease-out"
+            style={{
+              filter: `drop-shadow(0 0 12px ${
+                score >= 80
+                  ? "rgba(52, 211, 153, 0.4)"
+                  : score >= 50
+                    ? "rgba(251, 191, 36, 0.4)"
+                    : "rgba(248, 113, 113, 0.4)"
+              })`,
+            }}
+          />
+        </svg>
+
+        {/* Center content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">
+            Score
+          </span>
+          <span className={cn("text-5xl font-semibold", colorClass)}>
+            {displayScore}
+          </span>
+          <span className="text-sm text-muted-foreground mt-1">/100</span>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="flex-1">
+        <p className="text-lg text-muted-foreground leading-relaxed">
+          {summary}
+        </p>
+      </div>
+    </div>
+  );
+}
