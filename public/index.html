@@ -281,13 +281,27 @@
           <div class="score-visual">
             <div class="score-gauge">
               <svg viewBox="0 0 200 200">
+                <!-- Gradient definitions -->
+                <defs>
+                  <linearGradient id="scoreGradientGood" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#10b981"/>
+                    <stop offset="100%" stop-color="#34d399"/>
+                  </linearGradient>
+                  <linearGradient id="scoreGradientMedium" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#f59e0b"/>
+                    <stop offset="100%" stop-color="#fbbf24"/>
+                  </linearGradient>
+                  <linearGradient id="scoreGradientBad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#ef4444"/>
+                    <stop offset="100%" stop-color="#f87171"/>
+                  </linearGradient>
+                </defs>
                 <!-- Background arc -->
                 <circle class="gauge-bg" cx="100" cy="100" r="80"/>
                 <!-- Score arc -->
                 <circle id="score-circle" class="gauge-fill" cx="100" cy="100" r="80"/>
                 <!-- Center circle -->
                 <circle cx="100" cy="100" r="60" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1"/>
-              </svg>
               <div class="score-center">
                 <span class="score-label">Quality Score</span>
                 <span id="score-number" class="score-value">--</span>
