@@ -4,18 +4,26 @@
   "description": "AI-powered UI/UX QA Agent that tests websites using browser automation and LLM",
   "type": "module",
   "scripts": {
-    "qa": "bun run src/cli.ts",
-    "web": "bun run src/web/server.ts",
-    "test": "bun test"
+    "qa": "node --env-file=.env --import tsx src/cli.ts",
+    "web": "node --env-file=.env --import tsx src/web/server.ts",
+    "dev": "node --env-file=.env --import tsx --watch src/web/server.ts",
+    "test": "tsx --test"
   },
   "dependencies": {
-    "openai": "^4.77.0",
-    "zod": "^3.24.1",
+    "@auth/core": "^0.37.4",
+    "@convex-dev/auth": "^0.0.90",
+    "convex": "^1.17.0",
+    "cors": "^2.8.5",
     "execa": "^9.5.2",
-    "convex": "^1.17.0"
+    "express": "^4.21.0",
+    "openai": "^4.77.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.2"
   }
 }

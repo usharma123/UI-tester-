@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 // Create a new run entry
 export const createRun = mutation({
@@ -8,11 +9,24 @@ export const createRun = mutation({
     goals: v.string(),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Authentication required");
+
+    const user = await ctx.db.get(userId);
+    if (!user || user.remainingRuns <= 0) {
+      throw new Error("No remaining runs");
+    }
+
+    // Decrement remaining runs
+    await ctx.db.patch(userId, { remainingRuns: user.remainingRuns - 1 });
+
+    // Create run with userId
     const runId = await ctx.db.insert("runs", {
       url: args.url,
       goals: args.goals,
       status: "running",
       startedAt: Date.now(),
+      userId,
     });
     return runId;
   },
@@ -99,15 +113,19 @@ export const getRun = query({
   },
 });
 
-// List recent runs
+// List recent runs for the authenticated user
 export const listRuns = query({
   args: {
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+
     const limit = args.limit ?? 10;
     const runs = await ctx.db
       .query("runs")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc")
       .take(limit);
 

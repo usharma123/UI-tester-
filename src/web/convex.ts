@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { Report, Evidence } from "../qa/types";
 
 // Convex HTTP client wrapper for server-side usage
@@ -13,17 +14,23 @@ interface ConvexResponse<T> {
 
 async function callMutation<T>(
   functionPath: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  authToken?: string
 ): Promise<T> {
   if (!CONVEX_URL) {
     throw new Error("CONVEX_URL environment variable is not set");
   }
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
   const response = await fetch(`${CONVEX_URL}/api/mutation`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       path: functionPath,
       args,
@@ -45,17 +52,23 @@ async function callMutation<T>(
 
 async function callQuery<T>(
   functionPath: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  authToken?: string
 ): Promise<T> {
   if (!CONVEX_URL) {
     throw new Error("CONVEX_URL environment variable is not set");
   }
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
   const response = await fetch(`${CONVEX_URL}/api/query`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       path: functionPath,
       args,
@@ -76,8 +89,8 @@ async function callQuery<T>(
 }
 
 // Run management functions
-export async function createRun(url: string, goals: string): Promise<string> {
-  return callMutation<string>("runs:createRun", { url, goals });
+export async function createRun(url: string, goals: string, authToken?: string): Promise<string> {
+  return callMutation<string>("runs:createRun", { url, goals }, authToken);
 }
 
 export async function updateRunStatus(
@@ -144,8 +157,8 @@ export interface RunSummary {
   completedAt?: number;
 }
 
-export async function listRuns(limit?: number): Promise<RunSummary[]> {
-  return callQuery<RunSummary[]>("runs:listRuns", { limit: limit ?? 10 });
+export async function listRuns(limit?: number, authToken?: string): Promise<RunSummary[]> {
+  return callQuery<RunSummary[]>("runs:listRuns", { limit: limit ?? 10 }, authToken);
 }
 
 // Screenshot management functions
@@ -193,8 +206,7 @@ export async function uploadScreenshot(
   label: string
 ): Promise<{ storageId: string; url: string }> {
   // Read the file
-  const file = Bun.file(filePath);
-  const buffer = await file.arrayBuffer();
+  const buffer = await readFile(filePath);
 
   // Get upload URL
   const uploadUrl = await generateUploadUrl();

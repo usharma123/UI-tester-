@@ -1,16 +1,27 @@
 import { useState, type FormEvent } from "react";
+import { useConvexAuth } from "convex/react";
+import { useQuery } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
+import { api } from "convex/_generated/api";
 import { useAppStore } from "@/store/useAppStore";
 import { useSSE } from "@/hooks/useSSE";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Globe, Play, Loader2, Settings2 } from "lucide-react";
+import { Globe, Play, Loader2, Settings2, LogIn, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export function UrlForm() {
   const [url, setUrl] = useState("");
   const [goals, setGoals] = useState("");
   const [optionsOpen, setOptionsOpen] = useState(false);
+
+  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
+  const { signIn } = useAuthActions();
+  const remainingRuns = useQuery(
+    api.users.getRemainingRuns,
+    isAuthenticated ? {} : "skip"
+  );
 
   const status = useAppStore((s) => s.status);
   const startRun = useAppStore((s) => s.startRun);
@@ -19,9 +30,21 @@ export function UrlForm() {
   const { connect, loadHistory } = useSSE();
 
   const isRunning = status === "running";
+  const hasRuns = remainingRuns !== null && remainingRuns !== undefined && remainingRuns > 0;
+  const canSubmit = isAuthenticated && hasRuns && !isRunning && url.trim();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+
+    if (!isAuthenticated) {
+      toast.error("Please sign in to run tests");
+      return;
+    }
+
+    if (!hasRuns) {
+      toast.error("No remaining runs. Please contact support for more.");
+      return;
+    }
 
     let processedUrl = url.trim();
     if (!processedUrl) return;
@@ -51,6 +74,14 @@ export function UrlForm() {
 
       if (!response.ok) {
         const error = await response.json();
+        if (response.status === 401) {
+          toast.error("Please sign in to run tests");
+          return;
+        }
+        if (response.status === 403) {
+          toast.error("No remaining runs");
+          return;
+        }
         throw new Error(error.error || "Failed to start test");
       }
 
@@ -73,6 +104,49 @@ export function UrlForm() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to start test");
     }
+  };
+
+  // Render sign-in prompt if not authenticated
+  const renderAuthPrompt = () => {
+    if (isAuthLoading) return null;
+    if (isAuthenticated) return null;
+
+    return (
+      <div className="bg-muted/50 border border-border rounded-lg p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-500" />
+          <p className="text-sm text-muted-foreground">
+            Sign in to start testing websites
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
+          onClick={() => void signIn("workos")}
+          className="gap-2"
+        >
+          <LogIn className="w-4 h-4" />
+          Sign In
+        </Button>
+      </div>
+    );
+  };
+
+  // Render no runs warning
+  const renderNoRunsWarning = () => {
+    if (!isAuthenticated) return null;
+    if (remainingRuns === undefined) return null; // Still loading
+    if (hasRuns) return null;
+
+    return (
+      <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 flex items-center gap-3">
+        <AlertCircle className="w-5 h-5 text-destructive" />
+        <p className="text-sm text-destructive">
+          You have no remaining test runs. Please contact support for more.
+        </p>
+      </div>
+    );
   };
 
   return (
@@ -105,13 +179,13 @@ export function UrlForm() {
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 className="pl-12 h-12 bg-background border-border text-base"
-                disabled={isRunning}
+                disabled={isRunning || !isAuthenticated}
               />
             </div>
             <Button
               type="submit"
               size="lg"
-              disabled={isRunning || !url.trim()}
+              disabled={!canSubmit}
               className="h-12 px-6 font-semibold"
             >
               {isRunning ? (
@@ -128,36 +202,42 @@ export function UrlForm() {
             </Button>
           </div>
 
+          {/* Auth prompt or no runs warning */}
+          {renderAuthPrompt()}
+          {renderNoRunsWarning()}
+
           {/* Options panel */}
-          <Collapsible open={optionsOpen} onOpenChange={setOptionsOpen}>
-            <div className="bg-background border border-border/50 rounded-lg p-4">
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors w-full"
-                >
-                  <Settings2 className="w-3.5 h-3.5" />
-                  Test Goals
-                  <span className="ml-auto text-[10px]">
-                    {optionsOpen ? "▲" : "▼"}
-                  </span>
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-3">
-                <Input
-                  type="text"
-                  placeholder="homepage UX + primary CTA + form validation + keyboard"
-                  value={goals}
-                  onChange={(e) => setGoals(e.target.value)}
-                  className="bg-card border-border/50 text-sm"
-                  disabled={isRunning}
-                />
-                <p className="text-xs text-muted-foreground mt-2">
-                  Describe what you want to test. Leave empty for default comprehensive scan.
-                </p>
-              </CollapsibleContent>
-            </div>
-          </Collapsible>
+          {isAuthenticated && hasRuns && (
+            <Collapsible open={optionsOpen} onOpenChange={setOptionsOpen}>
+              <div className="bg-background border border-border/50 rounded-lg p-4 mt-4">
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors w-full"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                    Test Goals
+                    <span className="ml-auto text-[10px]">
+                      {optionsOpen ? "▲" : "▼"}
+                    </span>
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3">
+                  <Input
+                    type="text"
+                    placeholder="homepage UX + primary CTA + form validation + keyboard"
+                    value={goals}
+                    onChange={(e) => setGoals(e.target.value)}
+                    className="bg-card border-border/50 text-sm"
+                    disabled={isRunning}
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Describe what you want to test. Leave empty for default comprehensive scan.
+                  </p>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          )}
         </div>
       </form>
     </section>

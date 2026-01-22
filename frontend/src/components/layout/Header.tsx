@@ -1,5 +1,7 @@
 import { useAppStore } from "@/store/useAppStore";
 import { cn } from "@/lib/utils";
+import { AuthButton } from "@/components/auth/AuthButton";
+import { RemainingRuns } from "@/components/auth/RemainingRuns";
 
 export function Header() {
   const status = useAppStore((s) => s.status);
@@ -44,24 +46,33 @@ export function Header() {
         </div>
       </div>
 
-      {/* Status indicator */}
-      <div className="flex items-center gap-3 px-4 py-2 bg-card border border-border rounded-lg">
-        <div
-          className={cn(
-            "w-2 h-2 rounded-full",
-            status === "running"
-              ? "bg-blue-400 animate-pulse"
-              : "bg-emerald-400"
-          )}
-        />
-        <span
-          className={cn(
-            "text-xs font-mono font-semibold tracking-wider",
-            status === "running" ? "text-blue-400" : "text-emerald-400"
-          )}
-        >
-          {status === "running" ? "SCANNING" : "SYSTEM READY"}
-        </span>
+      {/* Right side controls */}
+      <div className="flex items-center gap-4">
+        {/* Remaining runs */}
+        <RemainingRuns />
+
+        {/* Status indicator */}
+        <div className="flex items-center gap-3 px-4 py-2 bg-card border border-border rounded-lg">
+          <div
+            className={cn(
+              "w-2 h-2 rounded-full",
+              status === "running"
+                ? "bg-blue-500 animate-pulse"
+                : "bg-emerald-500"
+            )}
+          />
+          <span
+            className={cn(
+              "text-xs font-mono font-semibold tracking-wider",
+              status === "running" ? "text-blue-500" : "text-emerald-500"
+            )}
+          >
+            {status === "running" ? "SCANNING" : "SYSTEM READY"}
+          </span>
+        </div>
+
+        {/* Auth button */}
+        <AuthButton />
       </div>
     </header>
   );

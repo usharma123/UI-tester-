@@ -91,9 +91,9 @@ export function ResultsSection() {
     <section className="animate-slide-up space-y-8">
       {/* Header */}
       <div className="pb-6 border-b border-border/50 relative">
-        <div className="absolute bottom-0 left-0 w-32 h-0.5 bg-gradient-to-r from-emerald-400 to-transparent" />
+        <div className="absolute bottom-0 left-0 w-32 h-0.5 bg-gradient-to-r from-emerald-500 to-transparent" />
         <div className="flex items-center gap-4">
-          <CheckCircle className="w-8 h-8 text-emerald-400" />
+          <CheckCircle className="w-8 h-8 text-emerald-500" />
           <h2 className="text-2xl font-medium">Analysis Complete</h2>
         </div>
       </div>

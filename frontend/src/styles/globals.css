@@ -42,40 +42,44 @@
 }
 
 :root {
-  /* Elegant Black/White Theme - Always dark */
-  --background: 0 0% 4%;
-  --foreground: 0 0% 98%;
-  --card: 0 0% 6%;
-  --card-foreground: 0 0% 98%;
-  --popover: 0 0% 6%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
-  --primary-foreground: 0 0% 4%;
-  --secondary: 0 0% 12%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 15%;
-  --muted-foreground: 0 0% 60%;
-  --accent: 0 0% 15%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 15%;
-  --input: 0 0% 15%;
-  --ring: 0 0% 98%;
+  /* Sophisticated Light Theme - Apple/Linear inspired */
+  --background: 0 0% 100%;           /* Pure white */
+  --foreground: 0 0% 9%;             /* Near black */
+  --card: 0 0% 99%;                  /* Very subtle off-white */
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 0 0% 9%;                /* Near black - action buttons */
+  --primary-foreground: 0 0% 100%;   /* White text on primary */
+  --secondary: 0 0% 96%;             /* Very light gray */
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 93%;                 /* Light gray backgrounds */
+  --muted-foreground: 0 0% 45%;      /* Medium gray text */
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 72% 51%;          /* Keep red */
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 89%;                /* Subtle gray border */
+  --input: 0 0% 89%;
+  --ring: 0 0% 9%;                   /* Near black focus rings */
   --radius: 0.625rem;
-  --chart-1: 0 0% 98%;
-  --chart-2: 0 0% 75%;
-  --chart-3: 0 0% 55%;
-  --chart-4: 0 0% 35%;
-  --chart-5: 0 0% 20%;
-  --sidebar: 0 0% 5%;
-  --sidebar-foreground: 0 0% 98%;
-  --sidebar-primary: 0 0% 98%;
-  --sidebar-primary-foreground: 0 0% 4%;
-  --sidebar-accent: 0 0% 12%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 12%;
-  --sidebar-ring: 0 0% 98%;
+
+  /* Chart colors - inverted grayscale */
+  --chart-1: 0 0% 9%;
+  --chart-2: 0 0% 25%;
+  --chart-3: 0 0% 45%;
+  --chart-4: 0 0% 65%;
+  --chart-5: 0 0% 85%;
+
+  /* Sidebar - slight distinction from main */
+  --sidebar: 0 0% 98%;
+  --sidebar-foreground: 0 0% 9%;
+  --sidebar-primary: 0 0% 9%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 93%;
+  --sidebar-accent-foreground: 0 0% 9%;
+  --sidebar-border: 0 0% 89%;
+  --sidebar-ring: 0 0% 9%;
 }
 
 @layer base {

@@ -1,7 +1,18 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
+  ...authTables,
+
+  users: defineTable({
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    image: v.optional(v.string()),
+    remainingRuns: v.number(), // Starts at 5
+  }).index("by_email", ["email"]),
+
   runs: defineTable({
     url: v.string(),
     goals: v.string(),
@@ -17,7 +28,10 @@ export default defineSchema({
     error: v.optional(v.string()), // Error message if failed
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
-  }).index("by_status", ["status"]),
+    userId: v.id("users"), // Associate with user
+  })
+    .index("by_status", ["status"])
+    .index("by_user", ["userId"]), // Query by user
 
   screenshots: defineTable({
     runId: v.id("runs"),

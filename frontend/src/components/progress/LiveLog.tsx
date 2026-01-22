@@ -24,8 +24,8 @@ export function LiveLog() {
           <span className="font-medium">Activity Log</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[10px] font-mono font-semibold text-emerald-400 uppercase tracking-wider">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[10px] font-mono font-semibold text-emerald-500 uppercase tracking-wider">
             Live
           </span>
         </div>
@@ -50,8 +50,8 @@ export function LiveLog() {
                 <span
                   className={cn(
                     "text-muted-foreground",
-                    log.level === "warn" && "text-amber-400",
-                    log.level === "error" && "text-red-400"
+                    log.level === "warn" && "text-amber-500",
+                    log.level === "error" && "text-red-500"
                   )}
                 >
                   {log.message}

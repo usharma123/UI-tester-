@@ -1,40 +1,30 @@
-import { join } from "node:path";
+import express, { type Request, type Response } from "express";
+import cors from "cors";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readFile, stat } from "node:fs/promises";
 import { loadConfig } from "../config.js";
 import { runQAStreaming } from "../qa/run-streaming.js";
 import type { SSEEvent, StartRunRequest, StartRunResponse } from "./types.js";
 import * as convex from "./convex.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const PORT = parseInt(process.env.PORT || "3000", 10);
-const PUBLIC_DIR = join(import.meta.dir, "../../public");
+const PUBLIC_DIR = join(__dirname, "../../public-react");
 
 // Store for active SSE connections
-const activeConnections = new Map<string, ReadableStreamDefaultController<Uint8Array>>();
+const activeConnections = new Map<string, Response>();
 
 // Store for run events (for late joiners)
 const runEvents = new Map<string, SSEEvent[]>();
 
+// Store for heartbeat intervals
+const heartbeatIntervals = new Map<string, NodeJS.Timeout>();
+
 function formatSSEMessage(event: SSEEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
-}
-
-async function serveStaticFile(path: string): Promise<Response> {
-  const filePath = join(PUBLIC_DIR, path === "/" ? "index.html" : path);
-
-  try {
-    const file = Bun.file(filePath);
-    const exists = await file.exists();
-
-    if (!exists) {
-      return new Response("Not Found", { status: 404 });
-    }
-
-    const contentType = getContentType(filePath);
-    return new Response(file, {
-      headers: { "Content-Type": contentType },
-    });
-  } catch (error) {
-    return new Response("Internal Server Error", { status: 500 });
-  }
 }
 
 function getContentType(filePath: string): string {
@@ -58,19 +48,31 @@ function generateRunId(): string {
   return `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-async function handleStartRun(request: Request): Promise<Response> {
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// API Routes
+
+// Start a new QA run
+app.post("/api/run", async (req: Request, res: Response) => {
   try {
-    const body: StartRunRequest = await request.json();
+    const body: StartRunRequest = req.body;
+    const authToken = req.headers.authorization?.replace("Bearer ", "");
 
     if (!body.url) {
-      return Response.json({ error: "URL is required" }, { status: 400 });
+      res.status(400).json({ error: "URL is required" });
+      return;
     }
 
     // Validate URL format
     try {
       new URL(body.url);
     } catch {
-      return Response.json({ error: "Invalid URL format" }, { status: 400 });
+      res.status(400).json({ error: "Invalid URL format" });
+      return;
     }
 
     const goals = body.goals || "homepage UX + primary CTA + form validation + keyboard";
@@ -78,7 +80,20 @@ async function handleStartRun(request: Request): Promise<Response> {
     // Create run in Convex or generate local ID
     let runId: string;
     if (convex.isConvexConfigured()) {
-      runId = await convex.createRun(body.url, goals);
+      try {
+        runId = await convex.createRun(body.url, goals, authToken);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        if (errorMessage.includes("Authentication required")) {
+          res.status(401).json({ error: "Authentication required" });
+          return;
+        }
+        if (errorMessage.includes("No remaining runs")) {
+          res.status(403).json({ error: "No remaining runs" });
+          return;
+        }
+        throw error;
+      }
     } else {
       runId = generateRunId();
     }
@@ -103,11 +118,10 @@ async function handleStartRun(request: Request): Promise<Response> {
         }
 
         // Send to connected clients
-        const controller = activeConnections.get(runId);
-        if (controller) {
+        const clientRes = activeConnections.get(runId);
+        if (clientRes) {
           try {
-            const encoder = new TextEncoder();
-            controller.enqueue(encoder.encode(formatSSEMessage(event)));
+            clientRes.write(formatSSEMessage(event));
           } catch (error) {
             // Connection closed
             activeConnections.delete(runId);
@@ -123,167 +137,143 @@ async function handleStartRun(request: Request): Promise<Response> {
       status: "started",
     };
 
-    return Response.json(response);
+    res.json(response);
   } catch (error) {
     console.error("Failed to start run:", error);
-    return Response.json(
-      { error: error instanceof Error ? error.message : "Failed to start run" },
-      { status: 500 }
-    );
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to start run",
+    });
   }
-}
-
-// Store for heartbeat intervals
-const heartbeatIntervals = new Map<string, Timer>();
-
-function handleSSEStream(runId: string): Response {
-  const encoder = new TextEncoder();
-
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      // Store controller for this run
-      activeConnections.set(runId, controller);
-
-      // Send connected event
-      const connectedEvent: SSEEvent = {
-        type: "connected",
-        runId,
-        timestamp: Date.now(),
-      };
-      controller.enqueue(encoder.encode(formatSSEMessage(connectedEvent)));
-
-      // Send any existing events for late joiners
-      const existingEvents = runEvents.get(runId);
-      if (existingEvents) {
-        for (const event of existingEvents) {
-          controller.enqueue(encoder.encode(formatSSEMessage(event)));
-        }
-      }
-      
-      // Start heartbeat to keep connection alive (every 15 seconds)
-      const heartbeat = setInterval(() => {
-        try {
-          // Send SSE comment as heartbeat (won't trigger client event handlers)
-          controller.enqueue(encoder.encode(": heartbeat\n\n"));
-        } catch {
-          // Connection closed, clean up
-          clearInterval(heartbeat);
-          heartbeatIntervals.delete(runId);
-        }
-      }, 15000);
-      
-      heartbeatIntervals.set(runId, heartbeat);
-    },
-    cancel() {
-      // Clean up heartbeat
-      const heartbeat = heartbeatIntervals.get(runId);
-      if (heartbeat) {
-        clearInterval(heartbeat);
-        heartbeatIntervals.delete(runId);
-      }
-      activeConnections.delete(runId);
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-    },
-  });
-}
-
-async function handleGetRuns(): Promise<Response> {
-  if (!convex.isConvexConfigured()) {
-    return Response.json({ runs: [] });
-  }
-
-  try {
-    const runs = await convex.listRuns(10);
-    return Response.json({ runs });
-  } catch (error) {
-    console.error("Failed to list runs:", error);
-    return Response.json({ runs: [], error: "Failed to list runs" });
-  }
-}
-
-async function handleGetRun(runId: string): Promise<Response> {
-  if (!convex.isConvexConfigured()) {
-    return Response.json({ error: "Convex not configured" }, { status: 503 });
-  }
-
-  try {
-    const run = await convex.getRun(runId);
-    if (!run) {
-      return Response.json({ error: "Run not found" }, { status: 404 });
-    }
-    return Response.json(run);
-  } catch (error) {
-    console.error("Failed to get run:", error);
-    return Response.json(
-      { error: error instanceof Error ? error.message : "Failed to get run" },
-      { status: 500 }
-    );
-  }
-}
-
-const server = Bun.serve({
-  port: PORT,
-  // Increase idle timeout for long-running SSE connections (max 255 seconds)
-  idleTimeout: 255,
-  async fetch(request) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    // CORS headers for API routes
-    if (path.startsWith("/api/")) {
-      if (request.method === "OPTIONS") {
-        return new Response(null, {
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-          },
-        });
-      }
-    }
-
-    // API Routes
-    if (path === "/api/run" && request.method === "POST") {
-      return handleStartRun(request);
-    }
-
-    // SSE stream for run events
-    const sseMatch = path.match(/^\/api\/run\/([^/]+)\/events$/);
-    if (sseMatch && request.method === "GET") {
-      return handleSSEStream(sseMatch[1]);
-    }
-
-    // Get all runs
-    if (path === "/api/runs" && request.method === "GET") {
-      return handleGetRuns();
-    }
-
-    // Get specific run
-    const runMatch = path.match(/^\/api\/runs\/([^/]+)$/);
-    if (runMatch && request.method === "GET") {
-      return handleGetRun(runMatch[1]);
-    }
-
-    // Health check
-    if (path === "/api/health") {
-      return Response.json({
-        status: "ok",
-        convexConfigured: convex.isConvexConfigured(),
-      });
-    }
-
-    // Static files
-    return serveStaticFile(path);
-  },
 });
 
-console.log(`UI QA Web Server running at http://localhost:${PORT}`);
-console.log(`Convex configured: ${convex.isConvexConfigured()}`);
+// SSE stream for run events
+app.get("/api/run/:runId/events", (req: Request, res: Response) => {
+  const { runId } = req.params;
+
+  // Set SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders();
+
+  // Store connection for this run
+  activeConnections.set(runId, res);
+
+  // Send connected event
+  const connectedEvent: SSEEvent = {
+    type: "connected",
+    runId,
+    timestamp: Date.now(),
+  };
+  res.write(formatSSEMessage(connectedEvent));
+
+  // Send any existing events for late joiners
+  const existingEvents = runEvents.get(runId);
+  if (existingEvents) {
+    for (const event of existingEvents) {
+      res.write(formatSSEMessage(event));
+    }
+  }
+
+  // Start heartbeat to keep connection alive (every 15 seconds)
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": heartbeat\n\n");
+    } catch {
+      // Connection closed, clean up
+      clearInterval(heartbeat);
+      heartbeatIntervals.delete(runId);
+    }
+  }, 15000);
+
+  heartbeatIntervals.set(runId, heartbeat);
+
+  // Clean up on close
+  req.on("close", () => {
+    const hb = heartbeatIntervals.get(runId);
+    if (hb) {
+      clearInterval(hb);
+      heartbeatIntervals.delete(runId);
+    }
+    activeConnections.delete(runId);
+  });
+});
+
+// Get all runs
+app.get("/api/runs", async (req: Request, res: Response) => {
+  if (!convex.isConvexConfigured()) {
+    res.json({ runs: [] });
+    return;
+  }
+
+  const authToken = req.headers.authorization?.replace("Bearer ", "");
+
+  try {
+    const runs = await convex.listRuns(10, authToken);
+    res.json({ runs });
+  } catch (error) {
+    console.error("Failed to list runs:", error);
+    res.json({ runs: [], error: "Failed to list runs" });
+  }
+});
+
+// Get specific run
+app.get("/api/runs/:runId", async (req: Request, res: Response) => {
+  if (!convex.isConvexConfigured()) {
+    res.status(503).json({ error: "Convex not configured" });
+    return;
+  }
+
+  try {
+    const run = await convex.getRun(req.params.runId);
+    if (!run) {
+      res.status(404).json({ error: "Run not found" });
+      return;
+    }
+    res.json(run);
+  } catch (error) {
+    console.error("Failed to get run:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to get run",
+    });
+  }
+});
+
+// Health check
+app.get("/api/health", (_req: Request, res: Response) => {
+  res.json({
+    status: "ok",
+    convexConfigured: convex.isConvexConfigured(),
+  });
+});
+
+// Static file serving
+app.use(async (req: Request, res: Response) => {
+  const requestPath = req.path === "/" ? "/index.html" : req.path;
+  const filePath = join(PUBLIC_DIR, requestPath);
+
+  try {
+    // Check if file exists
+    await stat(filePath);
+    const content = await readFile(filePath);
+    const contentType = getContentType(filePath);
+    res.setHeader("Content-Type", contentType);
+    res.send(content);
+  } catch (error) {
+    // File not found - serve index.html for SPA routing
+    try {
+      const indexPath = join(PUBLIC_DIR, "index.html");
+      const content = await readFile(indexPath);
+      res.setHeader("Content-Type", "text/html");
+      res.send(content);
+    } catch {
+      res.status(404).send("Not Found");
+    }
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`UI QA Web Server running at http://localhost:${PORT}`);
+  console.log(`Convex configured: ${convex.isConvexConfigured()}`);
+});
