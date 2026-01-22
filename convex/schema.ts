@@ -28,7 +28,7 @@ export default defineSchema({
     error: v.optional(v.string()), // Error message if failed
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
-    userId: v.id("users"), // Associate with user
+    userId: v.optional(v.id("users")), // Associate with user (optional for backward compatibility)
   })
     .index("by_status", ["status"])
     .index("by_user", ["userId"]), // Query by user

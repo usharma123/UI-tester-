@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { useConvexAuth } from "convex/react";
-import { useQuery } from "convex/react";
-import { useAuthActions } from "@convex-dev/auth/react";
+import { useConvexAuth, useQuery } from "convex/react";
+import { useAuth } from "@workos-inc/authkit-react";
 import { api } from "convex/_generated/api";
 import { useAppStore } from "@/store/useAppStore";
 import { useSSE } from "@/hooks/useSSE";
@@ -17,7 +16,7 @@ export function UrlForm() {
   const [optionsOpen, setOptionsOpen] = useState(false);
 
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
-  const { signIn } = useAuthActions();
+  const { signIn } = useAuth();
   const remainingRuns = useQuery(
     api.users.getRemainingRuns,
     isAuthenticated ? {} : "skip"
@@ -123,7 +122,7 @@ export function UrlForm() {
           type="button"
           variant="default"
           size="sm"
-          onClick={() => void signIn("workos")}
+          onClick={() => signIn()}
           className="gap-2"
         >
           <LogIn className="w-4 h-4" />

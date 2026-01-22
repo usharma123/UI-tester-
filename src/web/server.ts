@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
-const PUBLIC_DIR = join(__dirname, "../../public-react");
+const PUBLIC_DIR = join(__dirname, "../../dist");
 
 // Store for active SSE connections
 const activeConnections = new Map<string, Response>();

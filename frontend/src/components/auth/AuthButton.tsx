@@ -1,11 +1,21 @@
-import { useAuthActions } from "@convex-dev/auth/react";
-import { useConvexAuth } from "convex/react";
+import { useAuth } from "@workos-inc/authkit-react";
+import { useConvexAuth, useMutation } from "convex/react";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { LogIn, LogOut, Loader2 } from "lucide-react";
+import { api } from "convex/_generated/api";
 
 export function AuthButton() {
   const { isLoading, isAuthenticated } = useConvexAuth();
-  const { signIn, signOut } = useAuthActions();
+  const { user, signIn, signOut } = useAuth();
+  const getOrCreateUser = useMutation(api.users.getOrCreateUser);
+
+  // Ensure user exists in Convex when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      getOrCreateUser().catch(console.error);
+    }
+  }, [isAuthenticated, user, getOrCreateUser]);
 
   if (isLoading) {
     return (
@@ -20,7 +30,7 @@ export function AuthButton() {
       <Button
         variant="outline"
         size="sm"
-        onClick={() => void signOut()}
+        onClick={() => signOut()}
         className="gap-2"
       >
         <LogOut className="w-4 h-4" />
@@ -33,7 +43,7 @@ export function AuthButton() {
     <Button
       variant="default"
       size="sm"
-      onClick={() => void signIn("workos")}
+      onClick={() => signIn()}
       className="gap-2"
     >
       <LogIn className="w-4 h-4" />

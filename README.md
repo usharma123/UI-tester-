@@ -14,7 +14,8 @@ AI-powered CLI tool and web interface that tests websites using browser automati
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) runtime
+- [Node.js](https://nodejs.org/) v18+ runtime
+- [pnpm](https://pnpm.io/) package manager
 - [OpenRouter](https://openrouter.ai/) API key
 - [Convex](https://www.convex.dev/) account (for web interface)
 
@@ -26,10 +27,10 @@ git clone <repo-url>
 cd ui-qa-agent
 
 # Install dependencies
-bun install
+pnpm install
 
 # Install browser (first time only)
-bunx agent-browser install
+pnpm dlx agent-browser install
 
 # Set up environment
 cp .env.example .env
@@ -55,32 +56,63 @@ Make sure you have:
 - Run `npx convex dev` to initialize your deployment
 - Added your Convex deployment URL to your environment (if needed)
 
+### Frontend Setup
+
+```bash
+# Install frontend dependencies
+cd frontend
+pnpm install
+
+# Build for production (outputs to /dist)
+pnpm build
+
+# Or run development server (with hot reload)
+pnpm dev
+```
+
+## Development
+
+For local development with hot reloading:
+
+```bash
+# Terminal 1: Start Convex dev server
+npx convex dev
+
+# Terminal 2: Start frontend dev server (port 5173)
+cd frontend && pnpm dev
+
+# Terminal 3: Start backend server (port 3000)
+pnpm dev
+```
+
+The frontend dev server proxies `/api` requests to the backend server.
+
 ## Usage
 
 ### CLI Usage
 
 ```bash
 # Basic usage
-bun run qa https://example.com
+pnpm qa https://example.com
 
 # With custom goals
-bun run qa https://example.com --goals "test login flow + form validation"
+pnpm qa https://example.com --goals "test login flow + form validation"
 
 # With step limit
-bun run qa https://example.com --maxSteps 10
+pnpm qa https://example.com --maxSteps 10
 
 # With specific model
-bun run qa https://example.com --model "anthropic/claude-3-haiku"
+pnpm qa https://example.com --model "anthropic/claude-3-haiku"
 
 # Show help
-bun run qa --help
+pnpm qa --help
 ```
 
 ### Web Interface
 
 ```bash
 # Start the web server
-bun run web
+pnpm web
 
 # The web interface will be available at http://localhost:3000
 # Features:
@@ -119,7 +151,7 @@ bun run web
 
 ```
 .
-├── src/
+├── src/                    # Backend source code
 │   ├── cli.ts              # CLI entry point
 │   ├── config.ts           # Configuration management
 │   ├── agentBrowser.ts     # Browser automation wrapper
@@ -129,20 +161,29 @@ bun run web
 │   │   ├── judge.ts        # Result evaluation
 │   │   ├── run.ts          # CLI run orchestrator
 │   │   └── run-streaming.ts # Web streaming run orchestrator
-│   ├── web/                # Web interface
-│   │   ├── server.ts       # HTTP server with SSE
-│   │   ├── convex.ts       # Convex client integration
+│   ├── web/                # Web server
+│   │   ├── server.ts       # Express HTTP server with SSE
+│   │   ├── convex.ts       # Convex HTTP API client
 │   │   └── types.ts        # Type definitions
 │   └── utils/              # Utility functions
+│       ├── browserPool.ts  # Browser instance pooling
+│       ├── sitemap.ts      # Sitemap parsing
+│       └── ...
+├── frontend/               # React frontend (source)
+│   ├── src/
+│   │   ├── components/     # React components
+│   │   ├── hooks/          # Custom React hooks
+│   │   ├── store/          # Zustand state management
+│   │   └── lib/            # Utilities and types
+│   ├── vite.config.ts      # Vite build configuration
+│   └── package.json        # Frontend dependencies
 ├── convex/                 # Convex backend
-│   ├── convex.config.ts   # Convex app configuration
 │   ├── schema.ts           # Database schema
 │   ├── runs.ts             # Run management functions
-│   └── screenshots.ts      # Screenshot management functions
-├── public/                 # Web UI static files
-│   ├── index.html         # Main HTML page
-│   ├── app.js             # Frontend JavaScript
-│   └── styles.css         # Styling
+│   ├── users.ts            # User management functions
+│   ├── screenshots.ts      # Screenshot management
+│   └── auth.config.ts      # WorkOS AuthKit configuration
+├── dist/                   # Frontend build output (generated)
 ├── screenshots/            # Generated screenshots
 └── reports/                # Generated reports
 ```
@@ -178,15 +219,45 @@ Raw test evidence is saved to `reports/<timestamp>-evidence.json` containing:
 ## Architecture
 
 ```
-CLI → Run Orchestrator → Planner (LLM) → Executor (Browser) → Judge (LLM) → Report
-                                                                    ↓
-Web UI → HTTP Server → Convex Backend ←────────────────────────────┘
+                    ┌─────────────────────────────────────────────────────┐
+                    │                   QA Pipeline                       │
+                    │  Planner (LLM) → Executor (Browser) → Judge (LLM)  │
+                    └─────────────────────────────────────────────────────┘
+                                            ↑
+                    ┌───────────────────────┴───────────────────────┐
+                    │                                               │
+            ┌───────┴───────┐                           ┌───────────┴───────────┐
+            │   CLI Mode    │                           │      Web Mode         │
+            │  (src/cli.ts) │                           │  (src/web/server.ts)  │
+            └───────────────┘                           └───────────┬───────────┘
+                                                                    │
+                                                        ┌───────────┴───────────┐
+                                                        │                       │
+                                            ┌───────────┴──────┐    ┌───────────┴───────────┐
+                                            │  React Frontend  │    │   Convex Backend      │
+                                            │   (frontend/)    │    │   (convex/)           │
+                                            │  - Components    │    │   - Database schema   │
+                                            │  - Zustand store │    │   - Auth (WorkOS)     │
+                                            │  - SSE client    │    │   - Run persistence   │
+                                            └──────────────────┘    └───────────────────────┘
 ```
 
-1. **Planner**: Analyzes the page and creates a test plan
-2. **Executor**: Runs the plan step-by-step with the browser
-3. **Judge**: Evaluates evidence and generates a scored report
-4. **Convex Backend**: Stores runs, screenshots, and reports for web UI
+### Components
+
+1. **Planner**: Analyzes the page DOM and creates intelligent test plans using LLM
+2. **Executor**: Runs the plan step-by-step using real browser automation
+3. **Judge**: Evaluates test evidence and generates scored reports with issues
+4. **Express Server**: Serves the frontend and provides REST API + SSE streaming
+5. **Convex Backend**: Stores runs, screenshots, user data with WorkOS authentication
+6. **React Frontend**: Modern UI with real-time progress updates via SSE
+
+### Data Flow
+
+1. User submits URL via CLI or Web UI
+2. QA pipeline plans and executes tests
+3. Progress events streamed via SSE (web) or console (CLI)
+4. Results stored in Convex and returned to user
+5. Screenshots captured at key moments and stored with run
 
 ## Convex Functions
 
@@ -202,7 +273,7 @@ See `convex/` directory for implementation details.
 
 ```bash
 # Run tests
-bun test
+pnpm test
 ```
 
 ## Troubleshooting
@@ -212,7 +283,7 @@ bun test
 If you see `Could not resolve "convex/server"`:
 
 1. Ensure `convex.config.ts` exists in the `convex/` directory
-2. Run `bun install` to ensure dependencies are installed
+2. Run `pnpm install` to ensure dependencies are installed
 3. Run `npx convex dev` to initialize Convex
 
 ### Browser Installation
@@ -221,7 +292,7 @@ If browser commands fail:
 
 ```bash
 # Reinstall browser
-bunx agent-browser install
+pnpm dlx agent-browser install
 ```
 
 ### Port Already in Use
@@ -230,7 +301,7 @@ If port 3000 is already in use:
 
 ```bash
 # Set a different port
-PORT=3001 bun run web
+PORT=3001 pnpm web
 ```
 
 ## Safety
