@@ -221,7 +221,7 @@ Raw test evidence is saved to `reports/<timestamp>-evidence.json` containing:
 ```
                     ┌─────────────────────────────────────────────────────┐
                     │                   QA Pipeline                       │
-                    │  Planner (LLM) → Executor (Browser) → Judge (LLM)  │
+                    │  Planner (LLM) → Executor (Browser) → Judge (LLM)   │
                     └─────────────────────────────────────────────────────┘
                                             ↑
                     ┌───────────────────────┴───────────────────────┐
