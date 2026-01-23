@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -86,11 +87,10 @@ export function SitemapTree() {
   // Render tree recursively
   const renderNode = (
     node: TreeNode,
-    prefix: string = "",
-    isLast: boolean = true
-  ): JSX.Element[] => {
+    prefix: string = ""
+  ): ReactNode[] => {
     const children = Object.values(node.children);
-    const elements: JSX.Element[] = [];
+    const elements: ReactNode[] = [];
 
     children.forEach((child, idx) => {
       const isLastChild = idx === children.length - 1;
@@ -135,7 +135,7 @@ export function SitemapTree() {
 
       // Recursively render children
       const newPrefix = prefix + (isLastChild ? "    " : "│   ");
-      elements.push(...renderNode(child, newPrefix, isLastChild));
+      elements.push(...renderNode(child, newPrefix));
     });
 
     return elements;

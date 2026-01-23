@@ -1,4 +1,4 @@
-import { execa, type ExecaError } from "execa";
+import { chromium, type Browser, type Page, type BrowserContext } from "playwright";
 
 export interface AgentBrowserOptions {
   timeout?: number;
@@ -7,6 +7,7 @@ export interface AgentBrowserOptions {
   maxRetries?: number;
   retryDelayMs?: number;
   debug?: boolean;
+  headless?: boolean;
 }
 
 // Helper to sleep for a given duration
@@ -51,51 +52,56 @@ export interface AgentBrowser {
 
 const DEFAULT_TIMEOUT = 30000;
 
-function parseJsonResult(raw: string): unknown {
-  let parsed = JSON.parse(raw);
-  if (typeof parsed === "string") {
-    parsed = JSON.parse(parsed);
+/**
+ * Convert our selector format to Playwright-compatible selector
+ * Supports: text:Button, a:Link, button:Submit, role=..., CSS selectors
+ */
+function normalizeSelector(selector: string): string {
+  // Skip @e refs - they're not supported
+  if (selector.startsWith("@e")) {
+    throw new Error(`Element refs like "${selector}" are not supported. Use text or CSS selectors instead.`);
   }
-  return parsed;
-}
 
-async function runCommand(
-  args: string[],
-  options: AgentBrowserOptions = {}
-): Promise<string> {
-  const timeout = options.timeout ?? DEFAULT_TIMEOUT;
-
-  try {
-    const result = await execa("bunx", ["agent-browser", ...args], {
-      timeout,
-      reject: true,
-    });
-
-    if (options.debug) {
-      console.log(`[agent-browser] ${args.join(" ")}`);
-      if (result.stderr) {
-        console.error(`[agent-browser stderr] ${result.stderr}`);
-      }
-    }
-
-    return result.stdout;
-  } catch (error) {
-    const execaError = error as ExecaError;
-    const errorMessage = execaError.stderr || execaError.message || "Unknown error";
-    throw new Error(`agent-browser command failed: ${args.join(" ")}\n${errorMessage}`);
+  // text:Button Text -> text=Button Text
+  if (selector.startsWith("text:")) {
+    return `text=${selector.slice(5)}`;
   }
+
+  // a:Link Text -> a:has-text("Link Text")
+  if (selector.startsWith("a:")) {
+    const linkText = selector.slice(2);
+    return `a:has-text("${linkText}")`;
+  }
+
+  // button:Submit -> button:has-text("Submit")
+  if (selector.startsWith("button:")) {
+    const buttonText = selector.slice(7);
+    return `button:has-text("${buttonText}")`;
+  }
+
+  // label:Email -> text=Email (will find the label, then we can interact with associated input)
+  if (selector.startsWith("label:")) {
+    return `text=${selector.slice(6)}`;
+  }
+
+  // role=button[name="..."] - pass through as-is (Playwright format)
+  if (selector.startsWith("role=")) {
+    return selector;
+  }
+
+  // Regular CSS selector - pass through
+  return selector;
 }
 
 /**
- * Run a command with retry logic and exponential backoff
- * Retries on timeout, network, and navigation errors
+ * Run an async operation with retry logic and exponential backoff
  */
-async function runCommandWithRetry(
-  args: string[],
+async function withRetry<T>(
+  operation: () => Promise<T>,
   options: AgentBrowserOptions = {},
   maxRetries?: number,
   initialDelayMs?: number
-): Promise<string> {
+): Promise<T> {
   const retries = maxRetries ?? options.maxRetries ?? 3;
   const delayMs = initialDelayMs ?? options.retryDelayMs ?? 1000;
 
@@ -103,15 +109,15 @@ async function runCommandWithRetry(
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await runCommand(args, options);
+      return await operation();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
 
       // Only retry on retryable errors and if we have retries left
       if (isRetryableError(lastError) && attempt < retries) {
-        const delay = delayMs * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
+        const delay = delayMs * Math.pow(2, attempt);
         if (options.debug) {
-          console.log(`[agent-browser] Retry ${attempt + 1}/${retries} after ${delay}ms: ${lastError.message}`);
+          console.log(`[playwright] Retry ${attempt + 1}/${retries} after ${delay}ms: ${lastError.message}`);
         }
         await sleep(delay);
         continue;
@@ -124,122 +130,232 @@ async function runCommandWithRetry(
   throw lastError;
 }
 
+// Script to run in browser context for generating DOM snapshot
+const SNAPSHOT_SCRIPT = `
+(function() {
+  function getElementInfo(el, depth) {
+    var indent = "  ".repeat(depth);
+    var tag = el.tagName.toLowerCase();
+    var text = (el.textContent || "").trim().slice(0, 100);
+    var role = el.getAttribute("role") || "";
+    var ariaLabel = el.getAttribute("aria-label") || "";
+
+    var info = indent + "<" + tag;
+    if (role) info += ' role="' + role + '"';
+    if (ariaLabel) info += ' aria-label="' + ariaLabel + '"';
+    if (el.tagName === "INPUT") {
+      info += ' type="' + el.type + '" name="' + el.name + '"';
+      if (el.placeholder) info += ' placeholder="' + el.placeholder + '"';
+    }
+    if (el.tagName === "A" && el.href) {
+      info += ' href="' + el.href + '"';
+    }
+    if (el.tagName === "BUTTON") {
+      info += ' type="' + (el.type || "button") + '"';
+    }
+    info += ">";
+
+    if (text && el.children.length === 0) {
+      info += " " + text.slice(0, 50);
+    }
+
+    return info;
+  }
+
+  function walkDOM(node, depth) {
+    var lines = [];
+    var interactiveTags = ["a", "button", "input", "select", "textarea", "form", "nav", "main", "header", "footer", "h1", "h2", "h3", "h4", "h5", "h6"];
+    var tag = node.tagName ? node.tagName.toLowerCase() : "";
+
+    if (interactiveTags.indexOf(tag) !== -1 || node.getAttribute && node.getAttribute("role")) {
+      lines.push(getElementInfo(node, depth || 0));
+    }
+
+    var children = node.children ? Array.from(node.children) : [];
+    for (var i = 0; i < children.length; i++) {
+      var childLines = walkDOM(children[i], (depth || 0) + 1);
+      for (var j = 0; j < childLines.length; j++) {
+        lines.push(childLines[j]);
+      }
+    }
+
+    return lines;
+  }
+
+  return walkDOM(document.body, 0).join("\\n");
+})()
+`;
+
 /**
- * Convert our selector format to Playwright-compatible selector
- * Supports: text:Button, a:Link, button:Submit, role=..., CSS selectors
+ * Generate a DOM snapshot of the page focusing on interactive elements
  */
-function normalizeSelector(selector: string): string {
-  // Skip @e refs - they're not supported
-  if (selector.startsWith("@e")) {
-    throw new Error(`Element refs like "${selector}" are not supported. Use text or CSS selectors instead.`);
-  }
-  
-  // text:Button Text -> text=Button Text
-  if (selector.startsWith("text:")) {
-    return `text=${selector.slice(5)}`;
-  }
-  
-  // a:Link Text -> a:has-text("Link Text")
-  if (selector.startsWith("a:")) {
-    const linkText = selector.slice(2);
-    return `a:has-text("${linkText}")`;
-  }
-  
-  // button:Submit -> button:has-text("Submit")
-  if (selector.startsWith("button:")) {
-    const buttonText = selector.slice(7);
-    return `button:has-text("${buttonText}")`;
-  }
-  
-  // label:Email -> text=Email (will find the label, then we can interact with associated input)
-  if (selector.startsWith("label:")) {
-    return `text=${selector.slice(6)}`;
-  }
-  
-  // role=button[name="..."] - pass through as-is (Playwright format)
-  if (selector.startsWith("role=")) {
-    return selector;
-  }
-  
-  // Regular CSS selector - pass through
-  return selector;
+async function generateSnapshot(page: Page): Promise<string> {
+  return await page.evaluate(SNAPSHOT_SCRIPT);
 }
 
 export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrowser {
-  // Create separate option sets for different operation types
-  const navigationOptions: AgentBrowserOptions = {
-    ...options,
-    timeout: options.navigationTimeout ?? options.timeout,
-  };
+  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
+  let page: Page | null = null;
 
-  const actionOptions: AgentBrowserOptions = {
-    ...options,
-    timeout: options.actionTimeout ?? options.timeout,
+  const defaultTimeout = options.timeout ?? DEFAULT_TIMEOUT;
+  const navigationTimeout = options.navigationTimeout ?? defaultTimeout;
+  const actionTimeout = options.actionTimeout ?? defaultTimeout;
+  const headless = options.headless ?? true;
+
+  const ensurePage = async (): Promise<Page> => {
+    if (!browser) {
+      browser = await chromium.launch({
+        headless,
+        args: [
+          "--disable-blink-features=AutomationControlled",
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+        ],
+      });
+    }
+
+    if (!context) {
+      context = await browser.newContext({
+        viewport: { width: 1280, height: 720 },
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      });
+    }
+
+    if (!page) {
+      page = await context.newPage();
+      page.setDefaultTimeout(defaultTimeout);
+      page.setDefaultNavigationTimeout(navigationTimeout);
+    }
+
+    return page;
   };
 
   return {
     async open(url: string): Promise<void> {
-      // Use retry wrapper for navigation - most likely to have transient failures
-      await runCommandWithRetry(["open", url], navigationOptions);
+      await withRetry(async () => {
+        const p = await ensurePage();
+        await p.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: navigationTimeout
+        });
+        // Wait a bit for dynamic content
+        await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+      }, options);
+
+      if (options.debug) {
+        console.log(`[playwright] Opened: ${url}`);
+      }
     },
 
     async snapshot(): Promise<string> {
-      // Snapshots can fail on slow pages, use retry
-      return runCommandWithRetry(["snapshot"], options);
+      return withRetry(async () => {
+        const p = await ensurePage();
+        return generateSnapshot(p);
+      }, options);
     },
 
     async click(selector: string): Promise<void> {
       const normalizedSelector = normalizeSelector(selector);
-      // Actions can sometimes fail transiently, use limited retry
-      await runCommandWithRetry(["click", normalizedSelector], actionOptions, 1);
+      await withRetry(async () => {
+        const p = await ensurePage();
+        await p.click(normalizedSelector, { timeout: actionTimeout });
+      }, options, 1);
+
+      if (options.debug) {
+        console.log(`[playwright] Clicked: ${selector}`);
+      }
     },
 
     async fill(selector: string, text: string): Promise<void> {
       const normalizedSelector = normalizeSelector(selector);
-      await runCommandWithRetry(["fill", normalizedSelector, text], actionOptions, 1);
+      await withRetry(async () => {
+        const p = await ensurePage();
+        await p.fill(normalizedSelector, text, { timeout: actionTimeout });
+      }, options, 1);
+
+      if (options.debug) {
+        console.log(`[playwright] Filled: ${selector} with "${text}"`);
+      }
     },
 
     async press(key: string): Promise<void> {
-      await runCommand(["press", key], actionOptions);
+      const p = await ensurePage();
+      await p.keyboard.press(key);
+
+      if (options.debug) {
+        console.log(`[playwright] Pressed: ${key}`);
+      }
     },
 
     async getText(selector: string): Promise<string> {
       const normalizedSelector = normalizeSelector(selector);
-      return runCommand(["getText", normalizedSelector], actionOptions);
+      const p = await ensurePage();
+      const text = await p.textContent(normalizedSelector, { timeout: actionTimeout });
+      return text || "";
     },
 
     async screenshot(path: string): Promise<void> {
-      // Screenshots can fail transiently, use retry
-      await runCommandWithRetry(["screenshot", path], options, 2);
+      await withRetry(async () => {
+        const p = await ensurePage();
+        await p.screenshot({ path, fullPage: false });
+      }, options, 2);
+
+      if (options.debug) {
+        console.log(`[playwright] Screenshot saved: ${path}`);
+      }
     },
 
     async eval(script: string): Promise<string> {
-      return runCommandWithRetry(["eval", script], options, 1);
+      return withRetry(async () => {
+        const p = await ensurePage();
+        const result = await p.evaluate(script);
+        return typeof result === "string" ? result : JSON.stringify(result);
+      }, options, 1);
     },
 
     async evalJson<T>(script: string): Promise<T> {
-      const result = await runCommandWithRetry(["eval", script], options, 1);
-      return parseJsonResult(result) as T;
+      return withRetry(async () => {
+        const p = await ensurePage();
+        const result = await p.evaluate(script);
+        return result as T;
+      }, options, 1);
     },
 
     async getLinks(): Promise<LinkInfo[]> {
-      // Execute JavaScript to extract all links from the page
-      // Use single-line script to avoid issues with shell escaping
-      const script = `JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(a=>({href:a.href,text:(a.textContent||'').trim().slice(0,100)})))`;
       try {
-        const parsed = await parseJsonResult(await runCommandWithRetry(["eval", script], options, 1));
-        return parsed as LinkInfo[];
+        const p = await ensurePage();
+        return await p.evaluate(() => {
+          return Array.from(document.querySelectorAll("a[href]")).map((a) => ({
+            href: (a as HTMLAnchorElement).href,
+            text: (a.textContent || "").trim().slice(0, 100),
+          }));
+        });
       } catch (error) {
-        // If eval command fails, return empty array
         if (options.debug) {
-          console.log(`[agent-browser] getLinks failed: ${error}`);
+          console.log(`[playwright] getLinks failed: ${error}`);
         }
         return [];
       }
     },
 
     async close(): Promise<void> {
-      await runCommand(["close"], options);
+      if (page) {
+        await page.close().catch(() => {});
+        page = null;
+      }
+      if (context) {
+        await context.close().catch(() => {});
+        context = null;
+      }
+      if (browser) {
+        await browser.close().catch(() => {});
+        browser = null;
+      }
+
+      if (options.debug) {
+        console.log("[playwright] Browser closed");
+      }
     },
   };
 }

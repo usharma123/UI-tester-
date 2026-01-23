@@ -1,4 +1,4 @@
-import { useAuth } from "@workos-inc/authkit-react";
+import { useClerk, useUser } from "@clerk/clerk-react";
 import { useConvexAuth, useMutation } from "convex/react";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,10 @@ import { api } from "convex/_generated/api";
 
 export function AuthButton() {
   const { isLoading, isAuthenticated } = useConvexAuth();
-  const { user, signIn, signOut } = useAuth();
+  const { user } = useUser();
+  const { openSignIn, signOut } = useClerk();
   const getOrCreateUser = useMutation(api.users.getOrCreateUser);
 
-  // Ensure user exists in Convex when authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
       getOrCreateUser().catch(console.error);
@@ -43,7 +43,7 @@ export function AuthButton() {
     <Button
       variant="default"
       size="sm"
-      onClick={() => signIn()}
+      onClick={() => openSignIn()}
       className="gap-2"
     >
       <LogIn className="w-4 h-4" />

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useConvexAuth, useQuery } from "convex/react";
-import { useAuth } from "@workos-inc/authkit-react";
+import { useClerk, useAuth } from "@clerk/clerk-react";
 import { api } from "convex/_generated/api";
 import { useAppStore } from "@/store/useAppStore";
 import { useSSE } from "@/hooks/useSSE";
@@ -16,7 +16,8 @@ export function UrlForm() {
   const [optionsOpen, setOptionsOpen] = useState(false);
 
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
-  const { signIn } = useAuth();
+  const { openSignIn } = useClerk();
+  const { getToken } = useAuth();
   const remainingRuns = useQuery(
     api.users.getRemainingRuns,
     isAuthenticated ? {} : "skip"
@@ -26,7 +27,7 @@ export function UrlForm() {
   const startRun = useAppStore((s) => s.startRun);
   const addToHistory = useAppStore((s) => s.addToHistory);
   const reset = useAppStore((s) => s.reset);
-  const { connect, loadHistory } = useSSE();
+  const { connect } = useSSE();
 
   const isRunning = status === "running";
   const hasRuns = remainingRuns !== null && remainingRuns !== undefined && remainingRuns > 0;
@@ -65,9 +66,15 @@ export function UrlForm() {
     reset();
 
     try {
+      // Get Clerk token for Convex
+      const token = await getToken({ template: "convex" });
+
       const response = await fetch("/api/run", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
         body: JSON.stringify({ url: processedUrl, goals: goals.trim() || undefined }),
       });
 
@@ -122,7 +129,7 @@ export function UrlForm() {
           type="button"
           variant="default"
           size="sm"
-          onClick={() => signIn()}
+          onClick={() => openSignIn()}
           className="gap-2"
         >
           <LogIn className="w-4 h-4" />

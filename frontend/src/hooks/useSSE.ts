@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { useAppStore } from "@/store/useAppStore";
 import type { SSEEvent } from "@/lib/types";
 
@@ -7,6 +8,7 @@ const MAX_RETRIES = 3;
 export function useSSE() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryCountRef = useRef(0);
+  const { getToken } = useAuth();
 
   const {
     currentRunId,
@@ -163,7 +165,12 @@ export function useSSE() {
   // Load history
   const loadHistory = useCallback(async () => {
     try {
-      const response = await fetch("/api/runs");
+      const token = await getToken({ template: "convex" });
+      const response = await fetch("/api/runs", {
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
       const { runs } = await response.json();
       if (runs) {
         setHistory(runs);
@@ -171,7 +178,7 @@ export function useSSE() {
     } catch (err) {
       console.error("Failed to load history:", err);
     }
-  }, [setHistory]);
+  }, [setHistory, getToken]);
 
   // Cleanup on unmount
   useEffect(() => {

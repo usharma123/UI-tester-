@@ -51,18 +51,19 @@ function formatAuditSamples(samples: DomAuditSample[]): string {
   return samples.map((s) => `${s.selector}${s.text ? ` (${s.text})` : ""}`).join("; ");
 }
 
-function hasAuditIssues(audit: AuditEntry): boolean {
+function hasAuditIssues(audit: AuditEntry | null | undefined): boolean {
+  if (!audit?.summary) return false;
   const summary = audit.summary;
   return (
-    summary.imagesMissingAlt > 0 ||
-    summary.inputsMissingLabel > 0 ||
-    summary.buttonsMissingLabel > 0 ||
-    summary.linksGenericText > 0 ||
-    summary.emptyHeadings > 0 ||
-    summary.headingOrderIssues > 0 ||
-    summary.smallTouchTargets > 0 ||
+    (summary.imagesMissingAlt ?? 0) > 0 ||
+    (summary.inputsMissingLabel ?? 0) > 0 ||
+    (summary.buttonsMissingLabel ?? 0) > 0 ||
+    (summary.linksGenericText ?? 0) > 0 ||
+    (summary.emptyHeadings ?? 0) > 0 ||
+    (summary.headingOrderIssues ?? 0) > 0 ||
+    (summary.smallTouchTargets ?? 0) > 0 ||
     summary.htmlLangMissing ||
-    summary.horizontalOverflowPx > 0
+    (summary.horizontalOverflowPx ?? 0) > 0
   );
 }
 
@@ -71,28 +72,35 @@ function formatAudits(audits: AuditEntry[] | undefined): string {
     return "No DOM audits available.";
   }
 
+  // Filter out null/undefined entries
+  const validAudits = audits.filter((a): a is AuditEntry => a != null && a.summary != null);
+  if (validAudits.length === 0) {
+    return "No DOM audits available.";
+  }
+
   const MAX_AUDITS = 10;
-  const withIssues = audits.filter(hasAuditIssues);
-  const selected = (withIssues.length > 0 ? withIssues : audits).slice(0, MAX_AUDITS);
-  const truncatedCount = (withIssues.length > 0 ? withIssues : audits).length - selected.length;
+  const withIssues = validAudits.filter(hasAuditIssues);
+  const selected = (withIssues.length > 0 ? withIssues : validAudits).slice(0, MAX_AUDITS);
+  const truncatedCount = (withIssues.length > 0 ? withIssues : validAudits).length - selected.length;
 
   const formatted = selected
     .map((audit) => {
       const summary = audit.summary;
-      const samples = audit.samples;
+      const samples = audit.samples || {};
+      const viewport = audit.viewport || { width: 0, height: 0 };
       return [
-        `--- Audit: ${audit.label} @ ${audit.pageUrl} (${audit.viewport.width}x${audit.viewport.height}) ---`,
-        `Missing alt: ${summary.imagesMissingAlt} | Missing labels: ${summary.inputsMissingLabel} | Buttons w/o label: ${summary.buttonsMissingLabel}`,
-        `Generic link text: ${summary.linksGenericText} | Empty headings: ${summary.emptyHeadings} | H1 count: ${summary.h1Count}`,
-        `Heading order issues: ${summary.headingOrderIssues} | Small targets: ${summary.smallTouchTargets} | Lang missing: ${summary.htmlLangMissing}`,
-        `Horizontal overflow px: ${summary.horizontalOverflowPx}`,
-        `Samples alt: ${formatAuditSamples(samples.imagesMissingAlt)}`,
-        `Samples labels: ${formatAuditSamples(samples.inputsMissingLabel)}`,
-        `Samples buttons: ${formatAuditSamples(samples.buttonsMissingLabel)}`,
-        `Samples links: ${formatAuditSamples(samples.linksGenericText)}`,
-        `Samples headings: ${formatAuditSamples(samples.emptyHeadings)}`,
-        `Samples heading order: ${formatAuditSamples(samples.headingOrderIssues)}`,
-        `Samples touch targets: ${formatAuditSamples(samples.smallTouchTargets)}`,
+        `--- Audit: ${audit.label || "unknown"} @ ${audit.pageUrl || "unknown"} (${viewport.width}x${viewport.height}) ---`,
+        `Missing alt: ${summary.imagesMissingAlt ?? 0} | Missing labels: ${summary.inputsMissingLabel ?? 0} | Buttons w/o label: ${summary.buttonsMissingLabel ?? 0}`,
+        `Generic link text: ${summary.linksGenericText ?? 0} | Empty headings: ${summary.emptyHeadings ?? 0} | H1 count: ${summary.h1Count ?? 0}`,
+        `Heading order issues: ${summary.headingOrderIssues ?? 0} | Small targets: ${summary.smallTouchTargets ?? 0} | Lang missing: ${summary.htmlLangMissing ?? false}`,
+        `Horizontal overflow px: ${summary.horizontalOverflowPx ?? 0}`,
+        `Samples alt: ${formatAuditSamples(samples.imagesMissingAlt || [])}`,
+        `Samples labels: ${formatAuditSamples(samples.inputsMissingLabel || [])}`,
+        `Samples buttons: ${formatAuditSamples(samples.buttonsMissingLabel || [])}`,
+        `Samples links: ${formatAuditSamples(samples.linksGenericText || [])}`,
+        `Samples headings: ${formatAuditSamples(samples.emptyHeadings || [])}`,
+        `Samples heading order: ${formatAuditSamples(samples.headingOrderIssues || [])}`,
+        `Samples touch targets: ${formatAuditSamples(samples.smallTouchTargets || [])}`,
       ].join("\n");
     })
     .join("\n\n");

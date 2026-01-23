@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { useAppStore } from "@/store/useAppStore";
 import { useSSE } from "@/hooks/useSSE";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -87,6 +88,7 @@ export function Sidebar() {
   const loadHistoryRun = useAppStore((s) => s.loadHistoryRun);
   const selectHistory = useAppStore((s) => s.selectHistory);
   const { loadHistory } = useSSE();
+  const { getToken } = useAuth();
 
   useEffect(() => {
     loadHistory();
@@ -96,7 +98,12 @@ export function Sidebar() {
     if (run.status === "running") return;
 
     try {
-      const response = await fetch(`/api/runs/${run._id}`);
+      const token = await getToken({ template: "convex" });
+      const response = await fetch(`/api/runs/${run._id}`, {
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
       if (response.ok) {
         const fullRun = await response.json();
         loadHistoryRun(fullRun);
