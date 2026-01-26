@@ -20,11 +20,19 @@ interface IssueCardProps {
 }
 
 const severityColors: Record<Issue["severity"], string> = {
-  blocker: "bg-red-600 text-white",
-  high: "bg-orange-500 text-white",
-  medium: "bg-amber-500 text-black",
-  low: "bg-blue-500 text-white",
-  nit: "bg-zinc-500 text-white",
+  blocker: "bg-red-600 text-white border-red-600",
+  high: "bg-orange-500 text-white border-orange-500",
+  medium: "bg-amber-500 text-amber-950 border-amber-500",
+  low: "bg-blue-500 text-white border-blue-500",
+  nit: "bg-zinc-400 text-zinc-900 border-zinc-400",
+};
+
+const severityLabels: Record<Issue["severity"], string> = {
+  blocker: "Blocker",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+  nit: "Nit",
 };
 
 function generatePrompt(issue: Issue, url: string): string {
@@ -76,22 +84,22 @@ export function IssueCard({ issue, index, url = "", onImageClick }: IssueCardPro
     <Accordion type="single" collapsible className="w-full">
       <AccordionItem
         value={`issue-${index}`}
-        className="border border-border rounded-lg overflow-hidden bg-gradient-to-br from-secondary/50 to-card"
+        className="border border-border rounded-xl overflow-hidden bg-card hover:shadow-sm transition-shadow"
       >
-        <AccordionTrigger className="px-5 py-4 hover:no-underline hover:bg-secondary/50 group">
+        <AccordionTrigger className="px-5 py-4 hover:no-underline hover:bg-secondary/30 group">
           <div className="flex items-center gap-3 flex-1 text-left">
             {/* Severity badge */}
             <Badge
               className={cn(
-                "text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5",
+                "text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border",
                 severityColors[issue.severity]
               )}
             >
-              {issue.severity}
+              {severityLabels[issue.severity]}
             </Badge>
 
             {/* Category badge */}
-            <Badge variant="outline" className="text-[10px] font-mono uppercase">
+            <Badge variant="outline" className="text-[10px] font-mono uppercase rounded-full px-2.5 py-1">
               {issue.category}
             </Badge>
 

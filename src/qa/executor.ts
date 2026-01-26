@@ -3,6 +3,8 @@ import type { AgentBrowser } from "../agentBrowser.js";
 import type { Plan, Step, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry } from "./types.js";
 import { ensureDir } from "../utils/fs.js";
 
+const isDebug = process.env.DEBUG === "true";
+
 export interface ExecutorOptions {
   screenshotDir: string;
   maxSteps: number;
@@ -50,7 +52,7 @@ export async function executePlan(
       screenshotCounter++;
       return filepath;
     } catch (error) {
-      console.warn(`Failed to take screenshot at step ${stepIndex}:`, error);
+      if (isDebug) console.log(`[Executor] Failed to take screenshot at step ${stepIndex}:`, error);
       return undefined;
     }
   }
@@ -61,7 +63,7 @@ export async function executePlan(
       snapshots.push({ stepIndex, content });
       return content;
     } catch (error) {
-      console.warn(`Failed to take snapshot at step ${stepIndex}:`, error);
+      if (isDebug) console.log(`[Executor] Failed to take snapshot at step ${stepIndex}:`, error);
       return undefined;
     }
   }
@@ -107,7 +109,7 @@ export async function executePlan(
       if (isBlockingError(errorMessage) || options.strictMode) {
         executedStep.status = "blocked";
         blocked = true;
-        console.error(`Execution blocked at step ${i}: ${errorMessage}`);
+        if (isDebug) console.log(`[Executor] Blocked at step ${i}: ${errorMessage}`);
       }
     }
 

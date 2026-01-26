@@ -14,6 +14,8 @@ export interface PlannerResult {
  * Validate and filter URLs in plan steps against the sitemap
  * This prevents the LLM from fabricating URLs that don't exist
  */
+const isDebug = process.env.DEBUG === "true";
+
 function validatePlanUrls(plan: Plan, baseUrl: string, sitemapUrls: string[]): Plan {
   const baseHost = new URL(baseUrl).hostname;
   const validUrls = new Set([baseUrl, ...sitemapUrls]);
@@ -35,7 +37,7 @@ function validatePlanUrls(plan: Plan, baseUrl: string, sitemapUrls: string[]): P
 
         // Must be same domain
         if (stepUrl.hostname !== baseHost) {
-          console.warn(`[Planner] Skipping cross-domain URL: ${step.selector}`);
+          if (isDebug) console.log(`[Planner] Skipping cross-domain URL: ${step.selector}`);
           continue;
         }
 
@@ -43,14 +45,14 @@ function validatePlanUrls(plan: Plan, baseUrl: string, sitemapUrls: string[]): P
         const normalizedStepUrl = step.selector.replace(/\/$/, "");
         if (!validUrls.has(step.selector) && !validUrls.has(normalizedStepUrl)) {
           // URL was fabricated by LLM - skip it
-          console.warn(`[Planner] Skipping fabricated URL (not in sitemap): ${step.selector}`);
+          if (isDebug) console.log(`[Planner] Skipping fabricated URL (not in sitemap): ${step.selector}`);
           continue;
         }
 
         validatedSteps.push(step);
       } catch {
         // Invalid URL - skip
-        console.warn(`[Planner] Skipping invalid URL: ${step.selector}`);
+        if (isDebug) console.log(`[Planner] Skipping invalid URL: ${step.selector}`);
         continue;
       }
     } else {

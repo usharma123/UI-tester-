@@ -2,7 +2,13 @@ import { useEffect, useRef } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Terminal } from "lucide-react";
+import { Terminal, Info, AlertTriangle, XCircle } from "lucide-react";
+
+const levelIcons = {
+  info: Info,
+  warn: AlertTriangle,
+  error: XCircle,
+};
 
 export function LiveLog() {
   const logs = useAppStore((s) => s.logs);
@@ -22,6 +28,9 @@ export function LiveLog() {
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <Terminal className="w-4 h-4" />
           <span className="font-medium">Activity Log</span>
+          <span className="text-xs text-muted-foreground/60">
+            ({logs.length} events)
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -32,32 +41,49 @@ export function LiveLog() {
       </div>
 
       {/* Log entries */}
-      <ScrollArea className="h-36 px-6 py-3 bg-background" ref={scrollRef}>
+      <ScrollArea className="h-44 px-6 py-3 bg-background/50" ref={scrollRef}>
         {logs.length === 0 ? (
-          <p className="text-sm text-muted-foreground font-mono">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground font-mono">
+            <div className="w-2 h-2 rounded-full bg-muted animate-pulse" />
             Waiting for events...
-          </p>
+          </div>
         ) : (
-          <div className="space-y-1">
-            {logs.map((log) => (
-              <div
-                key={log.id}
-                className="flex gap-4 font-mono text-xs animate-fade-in"
-              >
-                <span className="text-muted-foreground shrink-0">
-                  {log.timestamp.toLocaleTimeString("en-US", { hour12: false })}
-                </span>
-                <span
+          <div className="space-y-1.5">
+            {logs.map((log) => {
+              const Icon = levelIcons[log.level];
+              return (
+                <div
+                  key={log.id}
                   className={cn(
-                    "text-muted-foreground",
-                    log.level === "warn" && "text-amber-500",
-                    log.level === "error" && "text-red-500"
+                    "flex items-start gap-3 font-mono text-xs animate-fade-in py-1 px-2 rounded-md transition-colors",
+                    log.level === "warn" && "bg-amber-500/5",
+                    log.level === "error" && "bg-red-500/5"
                   )}
                 >
-                  {log.message}
-                </span>
-              </div>
-            ))}
+                  <Icon
+                    className={cn(
+                      "w-3.5 h-3.5 mt-0.5 shrink-0",
+                      log.level === "info" && "text-muted-foreground/60",
+                      log.level === "warn" && "text-amber-500",
+                      log.level === "error" && "text-red-500"
+                    )}
+                  />
+                  <span className="text-muted-foreground/60 shrink-0 tabular-nums">
+                    {log.timestamp.toLocaleTimeString("en-US", { hour12: false })}
+                  </span>
+                  <span
+                    className={cn(
+                      "flex-1",
+                      log.level === "info" && "text-foreground/80",
+                      log.level === "warn" && "text-amber-600",
+                      log.level === "error" && "text-red-600"
+                    )}
+                  >
+                    {log.message}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </ScrollArea>

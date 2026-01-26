@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { loadConfig, type CLIOptions } from "./config.js";
 import { runQA, printReportSummary } from "./qa/run.js";
 
@@ -7,7 +7,7 @@ function printUsage(): void {
 UI/UX QA Agent - AI-powered website testing
 
 Usage:
-  bun run qa <url> [options]
+  pnpm qa <url> [options]
 
 Options:
   --goals <string>     Test goals (default: "homepage UX + primary CTA + form validation + keyboard")
@@ -26,9 +26,9 @@ Environment Variables:
   DEBUG                Set to "true" for verbose output.
 
 Examples:
-  bun run qa https://example.com
-  bun run qa https://example.com --goals "test login flow + form validation"
-  bun run qa https://example.com --maxSteps 10 --model "anthropic/claude-3-haiku"
+  pnpm qa https://example.com
+  pnpm qa https://example.com --goals "test login flow + form validation"
+  pnpm qa https://example.com --maxSteps 10 --model "anthropic/claude-sonnet-4"
 `);
 }
 

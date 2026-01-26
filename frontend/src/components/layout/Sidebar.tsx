@@ -32,44 +32,47 @@ function HistoryItem({
   const scoreClass =
     run.score !== undefined
       ? run.score >= 80
-        ? "text-emerald-400 bg-emerald-400/10"
+        ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
         : run.score >= 50
-          ? "text-amber-400 bg-amber-400/10"
-          : "text-red-400 bg-red-400/10"
+          ? "text-amber-500 bg-amber-500/10 border-amber-500/20"
+          : "text-red-500 bg-red-500/10 border-red-500/20"
       : "";
 
   return (
     <Button
       variant="ghost"
       className={cn(
-        "w-full justify-start h-auto py-3 px-3 mb-1 relative group",
-        isActive && "bg-secondary"
+        "w-full justify-start h-auto py-3 px-3 mb-1 relative group rounded-lg transition-all",
+        isActive && "bg-secondary shadow-sm",
+        run.status === "running" && "border border-blue-500/30 bg-blue-500/5"
       )}
       onClick={onClick}
     >
       <div
         className={cn(
-          "absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-0 bg-foreground rounded-r transition-all",
-          isActive && "h-8",
-          "group-hover:h-6"
+          "absolute left-0 top-1/2 -translate-y-1/2 w-1 h-0 rounded-r transition-all",
+          isActive && "h-8 bg-foreground",
+          run.status === "running" && isActive && "bg-blue-500",
+          "group-hover:h-6 group-hover:bg-foreground/50"
         )}
       />
-      <div className="flex flex-col w-full gap-1">
+      <div className="flex flex-col w-full gap-1.5 pl-1">
         <span className="text-sm font-medium truncate text-left">{hostname}</span>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{date}</span>
           {run.status === "running" ? (
-            <span className="px-2 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider bg-blue-400/10 text-blue-400 rounded border border-blue-400/20 animate-pulse">
+            <span className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider bg-blue-500/10 text-blue-500 rounded-full border border-blue-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
               Active
             </span>
           ) : run.status === "failed" ? (
-            <span className="px-2 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider bg-red-400/10 text-red-400 rounded border border-red-400/20">
+            <span className="px-2 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider bg-red-500/10 text-red-500 rounded-full border border-red-500/20">
               Failed
             </span>
           ) : run.score !== undefined ? (
             <span
               className={cn(
-                "px-2 py-0.5 font-mono font-semibold rounded",
+                "px-2 py-0.5 font-mono font-bold rounded-full text-xs border",
                 scoreClass
               )}
             >
@@ -95,7 +98,11 @@ export function Sidebar() {
   }, [loadHistory]);
 
   const handleHistoryClick = async (run: RunStatus) => {
-    if (run.status === "running") return;
+    // If this is the currently running test, just select it to show progress
+    if (run.status === "running") {
+      selectHistory(run._id);
+      return;
+    }
 
     try {
       const token = await getToken({ template: "convex" });

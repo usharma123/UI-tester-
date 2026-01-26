@@ -102,6 +102,25 @@ export function useSSE() {
         case "log":
           addLog(event.level, event.message);
           break;
+
+        // Page-level progress for traversal phase
+        case "page_start":
+          // Update progress using page index (bounded)
+          setStepProgress(event.pageIndex + 1, event.totalPages);
+          addLog("info", `Testing page ${event.pageIndex + 1}/${event.totalPages}: ${event.url}`);
+          break;
+
+        case "page_complete":
+          addLog(
+            event.status === "success" ? "info" : "warn",
+            `Page ${event.pageIndex + 1} ${event.status}`
+          );
+          break;
+
+        case "pages_progress":
+          // Update step progress with bounded values
+          setStepProgress(event.tested + event.skipped, event.total);
+          break;
       }
     },
     [

@@ -9,6 +9,8 @@ import { getViewportInfo, runDomAudit, trySetViewport } from "./audits.js";
 import { writeJson, ensureDir, getRunDir } from "../utils/fs.js";
 import { getTimestamp, formatDuration } from "../utils/time.js";
 
+const isDebug = process.env.DEBUG === "true";
+
 export interface RunResult {
   report: Report;
   evidence: Evidence;
@@ -80,12 +82,12 @@ export async function runQA(config: Config, url: string): Promise<RunResult> {
             const audit = await runDomAudit(browser, url, viewport.label);
             audits.push({ ...audit, screenshotPath: auditScreenshot });
           } catch (error) {
-            console.warn(`[QA] Audit failed for ${viewport.label}: ${error}`);
+            if (isDebug) console.log(`[QA] Audit failed for ${viewport.label}: ${error}`);
           }
         }
 
         if (!resizeSupported) {
-          console.warn("[QA] Viewport resize unsupported; falling back to default viewport audit.");
+          if (isDebug) console.log("[QA] Viewport resize unsupported; falling back to default viewport audit.");
           const auditScreenshot = join(context.screenshotDir, "audit-default.png");
           await browser.screenshot(auditScreenshot);
           const audit = await runDomAudit(browser, url, "default");
@@ -94,7 +96,7 @@ export async function runQA(config: Config, url: string): Promise<RunResult> {
 
         await trySetViewport(browser, originalViewport.width, originalViewport.height);
       } catch (error) {
-        console.warn(`[QA] DOM audits failed: ${error}`);
+        if (isDebug) console.log(`[QA] DOM audits failed: ${error}`);
       }
     }
 
@@ -149,7 +151,7 @@ export async function runQA(config: Config, url: string): Promise<RunResult> {
     try {
       await browser.close();
     } catch (closeError) {
-      console.warn("[QA] Warning: Failed to close browser cleanly:", closeError);
+      if (isDebug) console.log("[QA] Warning: Failed to close browser cleanly:", closeError);
     }
   }
 

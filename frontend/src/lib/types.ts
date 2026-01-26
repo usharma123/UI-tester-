@@ -120,6 +120,32 @@ export interface SitemapEvent extends SSEEventBase {
   totalPages: number;
 }
 
+// Page-level progress events for traversal phase
+export interface PageStartEvent extends SSEEventBase {
+  type: "page_start";
+  url: string;
+  pageIndex: number;
+  totalPages: number;
+}
+
+export interface PageCompleteEvent extends SSEEventBase {
+  type: "page_complete";
+  url: string;
+  pageIndex: number;
+  status: "success" | "skipped" | "failed";
+  screenshotUrl?: string;
+  stepsExecuted?: number;
+  error?: string;
+}
+
+export interface PagesProgressEvent extends SSEEventBase {
+  type: "pages_progress";
+  tested: number;
+  skipped: number;
+  remaining: number;
+  total: number;
+}
+
 export type SSEEvent =
   | ConnectedEvent
   | PhaseStartEvent
@@ -131,7 +157,10 @@ export type SSEEvent =
   | CompleteEvent
   | ErrorEvent
   | LogEvent
-  | SitemapEvent;
+  | SitemapEvent
+  | PageStartEvent
+  | PageCompleteEvent
+  | PagesProgressEvent;
 
 // API types
 export interface StartRunRequest {

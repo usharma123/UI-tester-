@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 interface ScoreGaugeProps {
   score: number;
@@ -35,25 +36,44 @@ export function ScoreGauge({ score, summary }: ScoreGaugeProps) {
 
   const colorClass =
     score >= 80
-      ? "text-emerald-400"
+      ? "text-emerald-500"
       : score >= 50
-        ? "text-amber-400"
-        : "text-red-400";
+        ? "text-amber-500"
+        : "text-red-500";
+
+  const bgGlow =
+    score >= 80
+      ? "from-emerald-500/10"
+      : score >= 50
+        ? "from-amber-500/10"
+        : "from-red-500/10";
+
+  const TrendIcon = score >= 80 ? TrendingUp : score >= 50 ? Minus : TrendingDown;
+
+  const gradeLabel =
+    score >= 90 ? "Excellent" :
+    score >= 80 ? "Good" :
+    score >= 70 ? "Fair" :
+    score >= 50 ? "Needs Work" :
+    "Poor";
 
   return (
     <div className="flex items-center gap-10 p-10 bg-card border border-border rounded-2xl relative overflow-hidden">
       {/* Background accent */}
       <div
         className={cn(
-          "absolute top-0 left-0 right-0 h-0.5 opacity-60",
+          "absolute top-0 left-0 right-0 h-1 opacity-80",
           score >= 80
-            ? "bg-gradient-to-r from-transparent via-emerald-400 to-transparent"
+            ? "bg-gradient-to-r from-transparent via-emerald-500 to-transparent"
             : score >= 50
-              ? "bg-gradient-to-r from-transparent via-amber-400 to-transparent"
-              : "bg-gradient-to-r from-transparent via-red-400 to-transparent"
+              ? "bg-gradient-to-r from-transparent via-amber-500 to-transparent"
+              : "bg-gradient-to-r from-transparent via-red-500 to-transparent"
         )}
       />
-      <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-radial from-emerald-400/5 to-transparent opacity-50 rounded-full -translate-y-1/2 translate-x-1/4" />
+      <div className={cn(
+        "absolute top-0 right-0 w-64 h-64 bg-gradient-radial to-transparent opacity-40 rounded-full -translate-y-1/2 translate-x-1/4",
+        bgGlow
+      )} />
 
       {/* Score gauge */}
       <div className="relative w-48 h-48 shrink-0">
@@ -129,10 +149,7 @@ export function ScoreGauge({ score, summary }: ScoreGaugeProps) {
 
         {/* Center content */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">
-            Score
-          </span>
-          <span className={cn("text-5xl font-semibold", colorClass)}>
+          <span className={cn("text-5xl font-bold tabular-nums", colorClass)}>
             {displayScore}
           </span>
           <span className="text-sm text-muted-foreground mt-1">/100</span>
@@ -140,8 +157,21 @@ export function ScoreGauge({ score, summary }: ScoreGaugeProps) {
       </div>
 
       {/* Summary */}
-      <div className="flex-1">
-        <p className="text-lg text-muted-foreground leading-relaxed">
+      <div className="flex-1 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold",
+            score >= 80
+              ? "bg-emerald-500/10 text-emerald-600"
+              : score >= 50
+                ? "bg-amber-500/10 text-amber-600"
+                : "bg-red-500/10 text-red-600"
+          )}>
+            <TrendIcon className="w-4 h-4" />
+            {gradeLabel}
+          </div>
+        </div>
+        <p className="text-base text-muted-foreground leading-relaxed">
           {summary}
         </p>
       </div>

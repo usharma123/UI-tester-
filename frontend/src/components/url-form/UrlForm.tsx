@@ -6,8 +6,9 @@ import { useAppStore } from "@/store/useAppStore";
 import { useSSE } from "@/hooks/useSSE";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Globe, Play, Loader2, Settings2, LogIn, AlertCircle } from "lucide-react";
+import { Globe, Play, Loader2, Settings2, LogIn, AlertCircle, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 export function UrlForm() {
@@ -164,12 +165,20 @@ export function UrlForm() {
 
           {/* Label row */}
           <div className="flex items-baseline justify-between mb-5">
-            <label htmlFor="url-input" className="text-xl font-medium">
+            <label htmlFor="url-input" className="text-xl font-semibold">
               Target URL
             </label>
-            <span className="text-sm text-muted-foreground">
-              Enter any public website
-            </span>
+            <div className="flex items-center gap-3">
+              {isAuthenticated && remainingRuns !== undefined && (
+                <Badge variant="secondary" className="gap-1.5 text-xs font-mono">
+                  <Zap className="w-3 h-3" />
+                  {remainingRuns} runs left
+                </Badge>
+              )}
+              <span className="text-sm text-muted-foreground">
+                Enter any public website
+              </span>
+            </div>
           </div>
 
           {/* Input row */}
@@ -192,17 +201,21 @@ export function UrlForm() {
               type="submit"
               size="lg"
               disabled={!canSubmit}
-              className="h-12 px-6 font-semibold"
+              className={`h-12 px-8 font-semibold transition-all ${
+                isRunning
+                  ? "bg-blue-600 hover:bg-blue-700"
+                  : ""
+              }`}
             >
               {isRunning ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Scanning...
+                  Running...
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4 mr-2" />
-                  Begin Scan
+                  Start Scan
                 </>
               )}
             </Button>

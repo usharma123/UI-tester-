@@ -62,6 +62,8 @@ Please analyze these issues and provide:
 
 export function ResultsSection() {
   const status = useAppStore((s) => s.status);
+  const currentRunId = useAppStore((s) => s.currentRunId);
+  const selectedHistoryId = useAppStore((s) => s.selectedHistoryId);
   const report = useAppStore((s) => s.report);
   const screenshots = useAppStore((s) => s.screenshots);
 
@@ -85,7 +87,11 @@ export function ResultsSection() {
     }
   };
 
-  if (status !== "completed" || !report) return null;
+  // Show results if we have a report AND either:
+  // 1. Status is completed, OR
+  // 2. We're viewing a history item (not the current running test)
+  const isViewingHistory = selectedHistoryId && selectedHistoryId !== currentRunId;
+  if (!report || (status !== "completed" && !isViewingHistory)) return null;
 
   return (
     <section className="animate-slide-up space-y-8">

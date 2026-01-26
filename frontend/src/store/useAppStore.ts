@@ -147,14 +147,20 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setPlanCreated: (totalSteps) =>
     set({
-      totalSteps,
+      totalSteps: Math.max(0, totalSteps),
       currentStep: 0,
     }),
 
   setStepProgress: (current, total) =>
-    set({
-      currentStep: current,
-      totalSteps: total,
+    set((state) => {
+      // Ensure total is at least the previous total (monotonic)
+      const newTotal = Math.max(state.totalSteps, total, 0);
+      // Clamp current to never exceed total
+      const newCurrent = Math.min(Math.max(0, current), newTotal);
+      return {
+        currentStep: newCurrent,
+        totalSteps: newTotal,
+      };
     }),
 
   setSitemap: (urls, source, totalPages) =>
@@ -247,6 +253,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         status: "error",
         error: run.error || "Test failed",
+        selectedHistoryId: run._id,
+      });
+    } else if (run.status === "running") {
+      // Keep the running state visible - don't change status
+      set({
         selectedHistoryId: run._id,
       });
     }
