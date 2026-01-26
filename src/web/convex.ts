@@ -241,3 +241,58 @@ export async function uploadScreenshot(
 export function isConvexConfigured(): boolean {
   return !!CONVEX_URL;
 }
+
+// Call a query with auth token
+export async function callQueryWithAuth<T>(
+  functionPath: string,
+  args: Record<string, unknown>,
+  authToken: string
+): Promise<T> {
+  return callQuery<T>(functionPath, args, authToken);
+}
+
+// Call a mutation with auth token
+export async function callMutationWithAuth<T>(
+  functionPath: string,
+  args: Record<string, unknown>,
+  authToken: string
+): Promise<T> {
+  return callMutation<T>(functionPath, args, authToken);
+}
+
+// Call an internal mutation (for webhooks - no auth needed but requires internal API key)
+// Note: For Convex, internal mutations are called via the HTTP API without auth
+// The function itself must be marked as internalMutation in Convex
+export async function callInternalMutation<T>(
+  functionPath: string,
+  args: Record<string, unknown>
+): Promise<T> {
+  if (!CONVEX_URL) {
+    throw new Error("CONVEX_URL environment variable is not set");
+  }
+
+  // Internal mutations use the same endpoint but without auth header
+  // Convex validates based on the mutation being internal
+  const response = await fetch(`${CONVEX_URL}/api/mutation`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      path: functionPath,
+      args,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Convex internal mutation failed: ${response.statusText}`);
+  }
+
+  const result: ConvexResponse<T> = await response.json();
+
+  if (result.status === "error") {
+    throw new Error(result.errorMessage || "Convex internal mutation failed");
+  }
+
+  return result.value as T;
+}

@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Globe, Play, Loader2, Settings2, LogIn, AlertCircle, Zap } from "lucide-react";
+import { Globe, Play, Loader2, Settings2, LogIn, AlertCircle, Zap, ShoppingCart } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 export function UrlForm() {
@@ -147,11 +148,19 @@ export function UrlForm() {
     if (hasRuns) return null;
 
     return (
-      <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 flex items-center gap-3">
-        <AlertCircle className="w-5 h-5 text-destructive" />
-        <p className="text-sm text-destructive">
-          You have no remaining test runs. Please contact support for more.
-        </p>
+      <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-destructive" />
+          <p className="text-sm text-destructive">
+            You have no remaining test runs.
+          </p>
+        </div>
+        <Button asChild size="sm" variant="default">
+          <Link to="/pricing" className="gap-2">
+            <ShoppingCart className="w-4 h-4" />
+            Buy Runs
+          </Link>
+        </Button>
       </div>
     );
   };
@@ -170,10 +179,12 @@ export function UrlForm() {
             </label>
             <div className="flex items-center gap-3">
               {isAuthenticated && remainingRuns !== undefined && (
-                <Badge variant="secondary" className="gap-1.5 text-xs font-mono">
-                  <Zap className="w-3 h-3" />
-                  {remainingRuns} runs left
-                </Badge>
+                <Link to="/pricing">
+                  <Badge variant="secondary" className="gap-1.5 text-xs font-mono hover:bg-secondary/80 cursor-pointer">
+                    <Zap className="w-3 h-3" />
+                    {remainingRuns} runs left
+                  </Badge>
+                </Link>
               )}
               <span className="text-sm text-muted-foreground">
                 Enter any public website

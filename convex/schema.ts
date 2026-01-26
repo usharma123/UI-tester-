@@ -11,7 +11,11 @@ export default defineSchema({
     emailVerificationTime: v.optional(v.number()),
     image: v.optional(v.string()),
     remainingRuns: v.number(), // Starts at 5
-  }).index("by_email", ["email"]),
+    stripeCustomerId: v.optional(v.string()), // Stripe customer ID
+    lifetimePurchases: v.optional(v.number()), // Total amount purchased in cents
+  })
+    .index("by_email", ["email"])
+    .index("by_stripe_customer", ["stripeCustomerId"]),
 
   runs: defineTable({
     url: v.string(),
@@ -40,4 +44,24 @@ export default defineSchema({
     label: v.string(),
     createdAt: v.number(),
   }).index("by_run", ["runId"]),
+
+  purchases: defineTable({
+    userId: v.id("users"),
+    stripeSessionId: v.string(), // Checkout session ID
+    stripePaymentIntentId: v.optional(v.string()), // Payment intent ID
+    tier: v.union(v.literal("starter"), v.literal("pro"), v.literal("team")),
+    creditsAdded: v.number(), // Number of runs added
+    amountPaid: v.number(), // Amount in cents
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("refunded")
+    ),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_session", ["stripeSessionId"])
+    .index("by_status", ["status"]),
 });
