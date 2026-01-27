@@ -42,6 +42,8 @@ export interface Report {
   artifacts: {
     screenshots: string[];
     evidenceFile: string;
+    reportFile?: string;
+    llmFixFile?: string;
   };
 }
 

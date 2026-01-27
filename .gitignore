@@ -11,6 +11,7 @@ dist/
 # Generated outputs
 reports/
 screenshots/
+.ui-qa-runs/
 .claude 
 .playwright-mcp
 .pnpm-store/

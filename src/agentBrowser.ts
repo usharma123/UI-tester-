@@ -47,6 +47,7 @@ export interface AgentBrowser {
   eval(script: string): Promise<string>;
   evalJson<T>(script: string): Promise<T>;
   getLinks(): Promise<LinkInfo[]>;
+  setViewportSize(width: number, height: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -336,6 +337,15 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
           console.log(`[playwright] getLinks failed: ${error}`);
         }
         return [];
+      }
+    },
+
+    async setViewportSize(width: number, height: number): Promise<void> {
+      const p = await ensurePage();
+      await p.setViewportSize({ width, height });
+
+      if (options.debug) {
+        console.log(`[playwright] Viewport set to: ${width}x${height}`);
       }
     },
 

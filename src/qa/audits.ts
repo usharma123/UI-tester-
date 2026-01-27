@@ -195,8 +195,14 @@ export async function trySetViewport(
   width: number,
   height: number
 ): Promise<{ applied: boolean; actual: ViewportInfo }> {
-  await browser.eval(`window.resizeTo(${width}, ${height});`);
-  const actual = await getViewportInfo(browser);
-  const applied = Math.abs(actual.width - width) <= 2 && Math.abs(actual.height - height) <= 2;
-  return { applied, actual };
+  try {
+    await browser.setViewportSize(width, height);
+    const actual = await getViewportInfo(browser);
+    const applied = Math.abs(actual.width - width) <= 2 && Math.abs(actual.height - height) <= 2;
+    return { applied, actual };
+  } catch {
+    // Fallback: return current viewport as "not applied"
+    const actual = await getViewportInfo(browser);
+    return { applied: false, actual };
+  }
 }
