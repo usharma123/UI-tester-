@@ -1,5 +1,5 @@
 {
-  "name": "@utsav/ui-qa",
+  "name": "@usharma124/ui-qa",
   "version": "1.0.0",
   "description": "AI-powered UI/UX testing CLI with beautiful TUI",
   "type": "module",
@@ -20,7 +20,10 @@
     "dev": "bun run --watch src/cli-ink.tsx",
     "build": "bun build src/cli-ink.tsx --outdir dist --target node --packages external && chmod +x dist/cli-ink.js",
     "prepublishOnly": "bun run build",
-    "test": "tsx --test"
+    "test": "tsx --test",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
     "chalk": "^5.6.2",
@@ -38,6 +41,7 @@
     "@types/node": "^25.0.10",
     "@types/react": "^19.2.10",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitepress": "^1.6.4"
   }
 }
