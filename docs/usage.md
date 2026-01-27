@@ -1,131 +1,127 @@
 # Usage
 
-This page covers CLI options, interactive mode, and understanding the output.
+This page covers command-line options, execution phases, and output formats.
 
-## Basic Usage
+## Command Line
 
 ```bash
-# Test a website
-npx @usharma124/ui-qa https://example.com
-
-# With custom goals
-npx @usharma124/ui-qa https://example.com --goals "test checkout flow"
-
-# Show help
-npx @usharma124/ui-qa --help
+ui-qa <url> [options]
 ```
 
-## CLI Options
+### Options
 
 | Option | Description |
 |--------|-------------|
-| `--goals <string>` | Specify testing goals (overrides env var) |
-| `--help`, `-h` | Show help message |
+| `--goals <string>` | Testing objectives (overrides environment variable) |
+| `--help`, `-h` | Display help |
 
 ### Examples
 
 ```bash
-# Test e-commerce checkout
-npx @usharma124/ui-qa https://shop.example.com --goals "add to cart, checkout flow, payment form"
+# Basic usage
+npx @usharma124/ui-qa https://example.com
 
-# Test accessibility
-npx @usharma124/ui-qa https://example.com --goals "keyboard navigation, screen reader, color contrast"
+# Custom goals
+npx @usharma124/ui-qa https://shop.example.com --goals "checkout flow, payment forms"
 
-# Test forms
-npx @usharma124/ui-qa https://example.com --goals "form validation, error messages, required fields"
+# Accessibility focus
+npx @usharma124/ui-qa https://example.com --goals "keyboard navigation, screen reader support"
 ```
 
 ## Interactive Mode
 
-When you run without a URL, the TUI prompts you:
+Running without a URL launches the interactive interface:
 
 ```bash
 npx @usharma124/ui-qa
 ```
 
-The interactive mode shows:
-- URL input field
-- Real-time phase progress
-- Scrollable log stream
-- Final results summary
-
-### Keyboard Shortcuts
+### Keyboard Controls
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Submit URL / Continue |
-| `↑/↓` | Scroll through logs |
-| `r` | Retry after error |
-| `q` | Quit (when not running) |
+| `Enter` | Submit / Continue |
+| `↑` / `↓` | Scroll logs |
+| `r` | Retry on error |
+| `q` | Quit |
 
-## Testing Phases
+## Execution Phases
 
-UI QA runs through these phases:
+### Init
 
-### 1. Init
-Opens a headless browser and takes an initial screenshot.
+Opens a headless browser and captures an initial screenshot.
 
-### 2. Discovery
-Finds pages to test via:
-- `sitemap.xml` (preferred)
+### Discovery
+
+Locates pages through:
+- `sitemap.xml` parsing
 - `robots.txt` sitemap references
-- Link crawling from homepage
+- Recursive link crawling
 
-### 3. Planning
-The LLM analyzes each page and creates a test plan:
+### Planning
+
+The LLM analyzes each page and generates a test plan:
 - Identifies interactive elements
-- Plans test sequences
-- Considers your goals
+- Sequences test actions
+- Incorporates specified goals
 
-### 4. Execution
-Runs tests using real browser automation:
-- Clicks buttons and links
-- Fills forms (with safe dummy data)
-- Takes screenshots at each step
-- Captures errors and console output
+### Execution
 
-### 5. Evaluation
-The LLM evaluates all evidence and generates:
-- Overall score (0-100)
+Runs tests using Playwright across multiple viewports:
+- Desktop (1365×768), Tablet (820×1180), Mobile (390×844)
+- Clicks, form submissions, navigation
+- Screenshot capture before and after each action
+- Automatic retry with exponential backoff on failures
+- Console and error logging
+
+### Evaluation
+
+The LLM reviews all evidence and produces:
+- Quality score (0–100)
 - Categorized issues
 - Reproduction steps
-- Fix suggestions
+- Fix recommendations
 
-## Output Files
+## Output Structure
 
-Results are saved to `.ui-qa-runs/<run-id>/`:
+Results are written to `.ui-qa-runs/<run-id>/`:
 
 ```
 .ui-qa-runs/
 └── cli-1234567890/
-    ├── run.json          # Run metadata
-    ├── report.json       # Full structured report
-    ├── evidence.json     # Detailed execution data
-    ├── report.md         # Human-readable report
-    ├── llm-fix.txt       # AI fix instructions
+    ├── run.json
+    ├── report.json
+    ├── evidence.json
+    ├── report.md
+    ├── llm-fix.txt
     └── screenshots/
-        ├── 00-initial.png
-        ├── step-01-after.png
-        └── ...
 ```
 
-### Report Structure
+### File Reference
 
-The `report.json` contains:
+| File | Contents |
+|------|----------|
+| `run.json` | Run metadata and status |
+| `report.json` | Structured report with scores and issues |
+| `evidence.json` | Detailed execution data |
+| `report.md` | Human-readable summary |
+| `llm-fix.txt` | Instructions for automated fixes |
+| `screenshots/` | Visual evidence |
+
+### Report Schema
 
 ```json
 {
   "score": 85,
-  "summary": "Overall assessment...",
+  "summary": "...",
   "issues": [
     {
       "severity": "high",
       "category": "accessibility",
       "title": "Missing form labels",
       "description": "...",
-      "reproduction": ["Step 1...", "Step 2..."],
-      "suggestion": "Add aria-label attributes...",
-      "screenshot": "step-03-after.png"
+      "reproduction": ["..."],
+      "suggestion": "..."
     }
   ]
 }
@@ -133,28 +129,31 @@ The `report.json` contains:
 
 ### Issue Categories
 
-- **accessibility** - ARIA, keyboard nav, screen readers
-- **usability** - UX problems, confusing flows
-- **functionality** - Broken features, errors
-- **performance** - Slow loading, janky animations
-- **visual** - Layout issues, responsive problems
+| Category | Description |
+|----------|-------------|
+| `accessibility` | ARIA, keyboard navigation, screen readers |
+| `usability` | UX problems, confusing flows |
+| `functionality` | Broken features, errors |
+| `performance` | Loading, animations |
+| `visual` | Layout, responsive design |
 
 ### Severity Levels
 
-- **critical** - Site unusable, major breakage
-- **high** - Significant problems affecting users
-- **medium** - Notable issues worth fixing
-- **low** - Minor improvements
+| Level | Description |
+|-------|-------------|
+| `critical` | Site unusable |
+| `high` | Significant impact |
+| `medium` | Notable issues |
+| `low` | Minor improvements |
 
-## Safety Features
+## Safety
 
-UI QA is designed to be safe:
+UI QA is designed for safe operation:
 
-- **Dummy data only** - Forms use `test@example.com`, "Test User"
-- **No payments** - Never submits payment forms
-- **Data redaction** - Sensitive data removed before LLM processing
-- **Timeouts** - All browser operations have timeouts
-- **Headless** - No visible browser window
+- Uses dummy data for forms (`test@example.com`)
+- Does not submit payment forms
+- Redacts sensitive data before LLM processing
+- Enforces timeouts on all operations
 
 ## Debugging
 
@@ -164,37 +163,11 @@ Enable verbose output:
 DEBUG=true npx @usharma124/ui-qa https://example.com
 ```
 
-This shows:
-- LLM prompts and responses
-- Browser commands
-- Screenshot paths
-- Timing information
+## Score Interpretation
 
-## Tips
-
-### Effective Goals
-
-Be specific about what you want to test:
-
-```bash
-# Good - specific and actionable
---goals "login flow, password reset, session timeout"
-
-# Less effective - too vague
---goals "test everything"
-```
-
-### Testing Staging Sites
-
-Point to your staging environment for safe testing:
-
-```bash
-npx @usharma124/ui-qa https://staging.yoursite.com
-```
-
-### Interpreting Scores
-
-- **90-100**: Excellent - minor polish items only
-- **70-89**: Good - some issues to address
-- **50-69**: Fair - significant problems found
-- **Below 50**: Poor - major issues need attention
+| Range | Assessment |
+|-------|------------|
+| 90–100 | Excellent |
+| 70–89 | Good |
+| 50–69 | Fair |
+| Below 50 | Needs attention |

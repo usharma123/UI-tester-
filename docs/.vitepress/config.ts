@@ -2,27 +2,33 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'UI QA',
-  description: 'AI-powered UI/UX testing CLI with beautiful TUI',
+  description: 'AI-powered UI/UX testing CLI',
   
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
+    ['meta', { name: 'theme-color', content: '#6366f1' }],
   ],
 
   themeConfig: {
     logo: '/logo.svg',
+    siteTitle: 'UI QA',
     
     nav: [
-      { text: 'Home', link: '/' },
-      { text: 'Getting Started', link: '/getting-started' },
+      { text: 'Guide', link: '/getting-started' },
       { text: 'Configuration', link: '/configuration' },
       { text: 'Usage', link: '/usage' },
     ],
 
     sidebar: [
       {
-        text: 'Guide',
+        text: 'Introduction',
         items: [
           { text: 'Getting Started', link: '/getting-started' },
+        ]
+      },
+      {
+        text: 'Reference',
+        items: [
           { text: 'Configuration', link: '/configuration' },
           { text: 'Usage', link: '/usage' },
         ]
@@ -30,17 +36,21 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/usharma124/UI-tester-' },
+      { icon: 'github', link: 'https://github.com/usharma123/UI-tester-' },
+      { icon: 'linkedin', link: 'https://www.linkedin.com/in/usharma124/' },
       { icon: 'npm', link: 'https://www.npmjs.com/package/@usharma124/ui-qa' }
     ],
 
     footer: {
       message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2024-present'
     },
 
     search: {
       provider: 'local'
+    },
+
+    outline: {
+      level: [2, 3]
     }
   }
 })

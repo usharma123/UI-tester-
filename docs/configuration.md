@@ -1,114 +1,153 @@
 # Configuration
 
-UI QA is configured through environment variables. This page covers all available options.
+UI QA is configured through environment variables. This page documents all available options.
 
-## API Key Setup
+## API Key
 
-You need an [OpenRouter](https://openrouter.ai/) API key to use UI QA. OpenRouter provides access to various LLM models (GPT-4, Claude, Gemini, etc.) through a unified API.
+An [OpenRouter](https://openrouter.ai/) API key is required. OpenRouter provides unified access to various LLM providers including OpenAI, Anthropic, and Google.
 
-### Getting an API Key
+### Obtaining a Key
 
-1. Go to [openrouter.ai](https://openrouter.ai/)
-2. Sign up or log in
+1. Visit [openrouter.ai](https://openrouter.ai/)
+2. Create an account or sign in
 3. Navigate to **Keys** in the dashboard
-4. Create a new API key
-5. Copy the key (starts with `sk-or-v1-`)
+4. Generate a new key (format: `sk-or-v1-...`)
 
-### Setting the API Key
+### Setting the Key
 
-Choose one of these methods:
-
-#### Method 1: Environment Variable (Recommended for CI/CD)
+#### Environment Variable
 
 ```bash
-# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
 export OPENROUTER_API_KEY=sk-or-v1-your-key-here
-
-# Or set for a single command
-OPENROUTER_API_KEY=sk-or-v1-your-key-here npx @usharma124/ui-qa https://example.com
 ```
 
-#### Method 2: .env File (Recommended for Local Development)
+Add to your shell profile (`~/.bashrc`, `~/.zshrc`) for persistence.
+
+#### .env File
 
 Create a `.env` file in your working directory:
-
-```bash
-# Create the file
-echo "OPENROUTER_API_KEY=sk-or-v1-your-key-here" > .env
-
-# Or edit manually
-nano .env
-```
-
-Contents of `.env`:
 
 ```ini
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
-::: warning Keep Your Key Secret
-Never commit `.env` files to version control. Add `.env` to your `.gitignore`.
+::: warning Security
+Add `.env` to `.gitignore` to avoid committing credentials.
 :::
 
-## Environment Variables Reference
+## Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `OPENROUTER_API_KEY` | **Yes** | - | Your OpenRouter API key |
-| `OPENROUTER_MODEL` | No | `google/gemini-2.5-flash` | LLM model to use |
-| `MAX_STEPS` | No | `20` | Maximum test steps per page |
-| `MAX_PAGES` | No | `10` | Maximum pages to discover and test |
-| `PARALLEL_BROWSERS` | No | `3` | Number of concurrent browser instances |
-| `GOALS` | No | See below | Default testing goals |
-| `BROWSER_TIMEOUT` | No | `30000` | Browser command timeout in ms |
-| `DEBUG` | No | `false` | Enable verbose logging |
+### Required
 
-### Default Goals
+| Variable | Description |
+|----------|-------------|
+| `OPENROUTER_API_KEY` | API key for LLM access |
 
-When no goals are specified, UI QA tests:
+### LLM Configuration
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENROUTER_MODEL` | `anthropic/claude-sonnet-4.5` | Model identifier |
+| `GOALS` | `homepage UX + primary CTA + form validation + keyboard` | Testing objectives |
+
+### Test Limits
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_STEPS` | `20` | Maximum total test steps |
+| `MAX_PAGES` | `50` | Maximum pages to discover and test |
+| `STEPS_PER_PAGE` | `5` | Maximum steps per individual page |
+| `PARALLEL_BROWSERS` | `5` | Concurrent browser instances (1–10) |
+
+### Timeouts
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BROWSER_TIMEOUT` | `60000` | General browser timeout (ms) |
+| `NAVIGATION_TIMEOUT` | `45000` | Page load timeout (ms) |
+| `ACTION_TIMEOUT` | `15000` | Click/fill action timeout (ms) |
+
+### Retry Behavior
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_RETRIES` | `3` | Retry attempts before skipping |
+| `RETRY_DELAY_MS` | `1000` | Initial retry delay (doubles each attempt) |
+
+### Features
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUDITS_ENABLED` | `true` | Run accessibility and performance audits |
+| `STRICT_MODE` | `false` | Fail on any error (vs. skip and continue) |
+| `CAPTURE_BEFORE_AFTER` | `true` | Capture screenshots before and after actions |
+| `DEBUG` | `false` | Enable verbose logging |
+
+### Viewports
+
+UI QA tests three viewport sizes by default:
+
+| Viewport | Dimensions |
+|----------|------------|
+| Desktop | 1365×768 |
+| Tablet | 820×1180 |
+| Mobile | 390×844 |
+
+Override with the `VIEWPORTS` variable:
+
+```bash
+VIEWPORTS="desktop:1920x1080,tablet:768x1024,mobile:375x667"
 ```
-homepage UX + primary CTA + form validation + keyboard accessibility
-```
+
+Format: `label:WIDTHxHEIGHT` separated by commas. The label is optional.
 
 ## Model Selection
 
-OpenRouter supports many models. Some good options:
+Supported models include:
 
-```bash
-# Fast and cost-effective (default)
-OPENROUTER_MODEL=google/gemini-2.5-flash
+| Model | Identifier | Notes |
+|-------|------------|-------|
+| Claude Sonnet 4.5 | `anthropic/claude-sonnet-4.5` | Default |
+| Claude 3.5 Sonnet | `anthropic/claude-3.5-sonnet` | Previous generation |
+| Gemini 2.5 Flash | `google/gemini-2.5-flash` | Cost-effective |
+| GPT-4o | `openai/gpt-4o` | OpenAI option |
 
-# More capable, higher cost
-OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+See [OpenRouter Models](https://openrouter.ai/models) for the complete list.
 
-# OpenAI option
-OPENROUTER_MODEL=openai/gpt-4o
-```
-
-See [OpenRouter Models](https://openrouter.ai/models) for the full list.
-
-## Example .env File
-
-Here's a complete example configuration:
+## Example Configuration
 
 ```ini
 # Required
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
-# Optional customizations
-OPENROUTER_MODEL=google/gemini-2.5-flash
-MAX_STEPS=30
-MAX_PAGES=15
+# Model
+OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
+
+# Test scope
+MAX_PAGES=25
+STEPS_PER_PAGE=8
 PARALLEL_BROWSERS=4
-GOALS=test navigation + forms + mobile responsiveness
+GOALS=navigation + forms + mobile responsiveness
+
+# Timeouts
 BROWSER_TIMEOUT=60000
+NAVIGATION_TIMEOUT=45000
+ACTION_TIMEOUT=15000
+
+# Retries
+MAX_RETRIES=3
+RETRY_DELAY_MS=1000
+
+# Features
+AUDITS_ENABLED=true
+CAPTURE_BEFORE_AFTER=true
 DEBUG=false
+
+# Custom viewports
+VIEWPORTS=desktop:1920x1080,mobile:390x844
 ```
 
 ## CI/CD Integration
-
-For CI/CD pipelines, set environment variables in your platform:
 
 ### GitHub Actions
 
@@ -116,13 +155,11 @@ For CI/CD pipelines, set environment variables in your platform:
 - name: Run UI QA
   env:
     OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    MAX_PAGES: 10
+    PARALLEL_BROWSERS: 2
   run: npx @usharma124/ui-qa https://staging.example.com
 ```
 
-### Vercel
-
-Add `OPENROUTER_API_KEY` in Project Settings → Environment Variables.
-
 ### Other Platforms
 
-Most CI platforms support environment variables. Consult your platform's documentation for setting secrets.
+Set `OPENROUTER_API_KEY` as a secret or environment variable in your CI configuration.

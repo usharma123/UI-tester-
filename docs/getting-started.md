@@ -1,107 +1,105 @@
 # Getting Started
 
-UI QA is an AI-powered CLI tool that tests websites using real browser automation and LLM analysis. This guide covers installation and your first test run.
+UI QA is a command-line tool for automated UI/UX testing. It uses browser automation and LLM analysis to identify issues across your website.
 
 ## Prerequisites
 
-- **Node.js 18+** or [Bun](https://bun.sh/) runtime
-- **OpenRouter API key** - [Get one here](https://openrouter.ai/)
+- Node.js 18 or later (or [Bun](https://bun.sh/))
+- [OpenRouter API key](https://openrouter.ai/)
 
-## Installation Options
+## Installation
 
-### Option 1: Run with npx (Recommended)
+### Using npx (Recommended)
 
-No installation required. Just run:
+Run without installation:
 
 ```bash
 npx @usharma124/ui-qa https://example.com
 ```
 
-The first run will:
-- Download the package temporarily
-- Prompt you for your OpenRouter API key
-- Install Chromium browser if needed
+### Global Installation
 
-### Option 2: Global Installation
+Install for repeated use:
 
-Install globally for faster subsequent runs:
+::: code-group
 
-```bash
-# Using npm
+```bash [npm]
 npm install -g @usharma124/ui-qa
+```
 
-# Using bun
+```bash [bun]
 bun add -g @usharma124/ui-qa
+```
 
-# Using pnpm
+```bash [pnpm]
 pnpm add -g @usharma124/ui-qa
 ```
 
-Then run from anywhere:
+:::
+
+Then run from any directory:
 
 ```bash
 ui-qa https://example.com
 ```
 
-### Option 3: Project Dependency
+### Project Dependency
 
 Add to your project for CI/CD integration:
 
-```bash
-# Using npm
-npm install --save-dev @usharma124/ui-qa
+::: code-group
 
-# Using bun
+```bash [npm]
+npm install --save-dev @usharma124/ui-qa
+```
+
+```bash [bun]
 bun add -D @usharma124/ui-qa
 ```
 
-Add a script to your `package.json`:
+:::
+
+Add a script to `package.json`:
 
 ```json
 {
   "scripts": {
-    "test:ui": "ui-qa https://your-staging-url.com"
+    "test:ui": "ui-qa https://staging.example.com"
   }
 }
 ```
 
-## Browser Installation
+## Browser Setup
 
-On first run, you may need to install the browser:
+Install Chromium on first run:
 
 ```bash
 npx playwright install chromium
 ```
 
-This downloads a compatible Chromium browser that Playwright controls.
+## Running Your First Test
 
-## Your First Test
-
-1. **Set your API key** (see [Configuration](/configuration) for options):
+1. Set your API key:
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
-2. **Run a test**:
+2. Run a test:
 
 ```bash
 npx @usharma124/ui-qa https://example.com
 ```
 
-3. **Watch the TUI** as it:
-   - Opens a browser
-   - Discovers pages
-   - Plans tests
-   - Executes them
-   - Generates a report
+3. View results in `.ui-qa-runs/`:
 
-4. **View results** in `.ui-qa-runs/` directory:
-   - `report.md` - Human-readable report
-   - `report.json` - Structured data
-   - `screenshots/` - Visual evidence
+| File | Contents |
+|------|----------|
+| `report.md` | Human-readable report |
+| `report.json` | Structured data |
+| `screenshots/` | Visual evidence |
 
 ## Next Steps
 
 - [Configure environment variables](/configuration)
-- [Learn CLI options and usage](/usage)
+- [Learn CLI options](/usage)

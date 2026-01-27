@@ -2,64 +2,53 @@
 layout: home
 
 hero:
-  name: "UI QA"
-  text: "AI-Powered UI/UX Testing"
-  tagline: Test any website with intelligent browser automation and LLM analysis
+  text: Automated UI/UX Testing
+  tagline: Test websites with intelligent browser automation and LLM-powered analysis
   actions:
     - theme: brand
       text: Get Started
       link: /getting-started
     - theme: alt
-      text: View on GitHub
-      link: https://github.com/usharma124/UI-tester-
+      text: GitHub
+      link: https://github.com/usharma123/UI-tester-
 
 features:
-  - icon: 🤖
-    title: AI-Powered Testing
-    details: LLM generates intelligent test plans based on page content and your goals
-  - icon: 🌐
-    title: Real Browser Testing
-    details: Uses Playwright for actual browser interaction - clicks, forms, navigation
-  - icon: 📊
-    title: Comprehensive Reports
-    details: Scored reports with categorized issues, reproduction steps, and fix suggestions
-  - icon: 📸
-    title: Visual Evidence
-    details: Automatic screenshots at key moments and on errors for debugging
-  - icon: ⚡
-    title: Parallel Testing
-    details: Tests multiple pages concurrently for faster results
-  - icon: 🔍
-    title: Sitemap Discovery
-    details: Automatically discovers pages via sitemap.xml, robots.txt, or link crawling
+  - title: Intelligent Test Planning
+    details: Generates context-aware test plans by analyzing page structure and content
+  - title: Real Browser Automation
+    details: Executes tests using Playwright with actual clicks, form inputs, and navigation
+  - title: Multi-Viewport Testing
+    details: Tests desktop, tablet, and mobile viewports automatically with configurable sizes
+  - title: Visual Documentation
+    details: Captures screenshots before and after each action for debugging and evidence
+  - title: Concurrent Execution
+    details: Tests multiple pages in parallel with configurable browser pool (1-10 instances)
+  - title: Comprehensive Reporting
+    details: Scored reports with categorized issues, reproduction steps, and fix recommendations
 ---
 
 ## Quick Start
 
-Run UI QA instantly with npx - no installation required:
-
 ```bash
-# Test any website
 npx @usharma124/ui-qa https://example.com
-
-# With custom testing goals
-npx @usharma124/ui-qa https://example.com --goals "test checkout flow"
 ```
 
-::: warning API Key Required
-You'll need an [OpenRouter API key](https://openrouter.ai/) to use UI QA. See the [Configuration](/configuration) page for setup instructions.
+::: info Prerequisites
+An [OpenRouter API key](https://openrouter.ai/) is required. See [Configuration](/configuration) for setup details.
 :::
 
-## What It Does
+## How It Works
 
-UI QA analyzes websites through these phases:
+UI QA processes websites through four phases:
 
-1. **Discovery** - Finds all pages via sitemap or link crawling
-2. **Planning** - LLM creates intelligent test plans for each page
-3. **Execution** - Real browser runs the tests with screenshots
-4. **Evaluation** - LLM evaluates results and generates scored report
+| Phase | Description |
+|-------|-------------|
+| Discovery | Identifies pages via sitemap or link crawling |
+| Planning | Generates test plans using LLM analysis |
+| Execution | Runs tests with browser automation |
+| Evaluation | Produces scored reports with findings |
 
-## Sample Output
+## Output
 
 ```
 ┌─────────────────────────────────────────┐
@@ -73,4 +62,4 @@ UI QA analyzes websites through these phases:
 └─────────────────────────────────────────┘
 ```
 
-Results are saved locally with detailed markdown reports, screenshots, and JSON data for programmatic access.
+Results include markdown reports, JSON data, and screenshots saved to `.ui-qa-runs/`.

@@ -1,0 +1,73 @@
+/* Hero name gradient */
+:root {
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+}
+
+/* Center the entire hero layout */
+.VPHero {
+  padding-top: 80px !important;
+  padding-bottom: 80px !important;
+}
+
+.VPHero > .container {
+  display: block !important;
+  text-align: center !important;
+  max-width: 900px !important;
+  margin: 0 auto !important;
+}
+
+.VPHero > .container > .main {
+  display: block !important;
+  text-align: center !important;
+  max-width: none !important;
+  margin: 0 auto !important;
+}
+
+.VPHero h1.name {
+  text-align: center !important;
+  max-width: none !important;
+}
+
+.VPHero h1.name .clip {
+  text-align: center !important;
+}
+
+.VPHero p.text {
+  text-align: center !important;
+  max-width: none !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.VPHero p.tagline {
+  text-align: center !important;
+  max-width: none !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.VPHero .actions {
+  display: flex !important;
+  justify-content: center !important;
+  gap: 16px !important;
+}
+
+/* Override responsive styles */
+@media (min-width: 640px) {
+  .VPHero > .container {
+    text-align: center !important;
+  }
+}
+
+@media (min-width: 960px) {
+  .VPHero > .container {
+    display: block !important;
+    text-align: center !important;
+  }
+  
+  .VPHero > .container > .main {
+    display: block !important;
+    max-width: none !important;
+  }
+}
