@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { Config } from "../config.js";
 import type { AgentBrowser } from "../agentBrowser.js";
 import type { BrowserPool } from "../utils/browserPool.js";
-import type { SitemapUrl, PageStatus } from "../web/types.js";
+import type { SitemapUrl, PageStatus } from "./progress-types.js";
 import type { Step, ExecutedStep, SnapshotEntry, ErrorEntry, AuditEntry } from "./types.js";
 import { createPagePlan } from "./planner.js";
 import { runDomAudit } from "./audits.js";

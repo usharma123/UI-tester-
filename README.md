@@ -1,23 +1,22 @@
 # UI/UX QA Agent
 
-AI-powered CLI tool and web interface that tests websites using browser automation and LLM analysis. It drives a real browser, executes intelligent test plans, and generates detailed quality reports with screenshots.
+AI-powered terminal UI that tests websites using browser automation and LLM analysis. It drives a real browser, executes intelligent test plans, and generates detailed quality reports with screenshots.
 
 ## Features
 
+- **Beautiful Terminal UI**: Interactive TUI built with Ink for a modern CLI experience
 - **Intelligent Test Planning**: LLM generates test plans based on page content and goals
-- **Real Browser Testing**: Uses `agent-browser` for actual browser interaction
+- **Real Browser Testing**: Uses Playwright for actual browser interaction
+- **Sitemap Discovery**: Automatically discovers pages via sitemap.xml, robots.txt, or link crawling
+- **Parallel Page Testing**: Tests multiple pages concurrently for faster results
 - **Comprehensive Reports**: Scored reports with categorized issues and evidence
 - **Screenshot Capture**: Automatic screenshots at key moments and on errors
-- **Web Interface**: Modern web UI for running tests and viewing results
-- **Convex Backend**: Persistent storage for test runs and screenshots
-- **Flexible Configuration**: Customizable goals, steps, and models
+- **Local Storage**: All results saved locally with markdown reports
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) v18+ runtime
-- [pnpm](https://pnpm.io/) package manager
+- [Bun](https://bun.sh/) or [Node.js](https://nodejs.org/) v18+ runtime
 - [OpenRouter](https://openrouter.ai/) API key
-- [Convex](https://www.convex.dev/) account (for web interface)
 
 ## Installation
 
@@ -27,100 +26,56 @@ git clone <repo-url>
 cd ui-qa-agent
 
 # Install dependencies
-pnpm install
+bun install
+# or: pnpm install
 
 # Install browser (first time only)
-pnpm dlx agent-browser install
+bunx playwright install chromium
 
 # Set up environment
-cp .env.example .env
+cp env.example .env
 # Edit .env and add your OPENROUTER_API_KEY
 ```
 
-### Convex Setup (for Web Interface)
-
-The project uses Convex for backend storage. The `convex.config.ts` file is already configured.
-
-```bash
-# Initialize Convex (if not already done)
-npx convex dev
-
-# This will:
-# - Create a Convex deployment
-# - Push your schema and functions
-# - Set up the database
-```
-
-Make sure you have:
-- Created a Convex account at https://www.convex.dev
-- Run `npx convex dev` to initialize your deployment
-- Added your Convex deployment URL to your environment (if needed)
-
-### Frontend Setup
-
-```bash
-# Install frontend dependencies
-cd frontend
-pnpm install
-
-# Build for production (outputs to /dist)
-pnpm build
-
-# Or run development server (with hot reload)
-pnpm dev
-```
-
-## Development
-
-For local development with hot reloading:
-
-```bash
-# Terminal 1: Start Convex dev server
-npx convex dev
-
-# Terminal 2: Start frontend dev server (port 5173)
-cd frontend && pnpm dev
-
-# Terminal 3: Start backend server (port 3000)
-pnpm dev
-```
-
-The frontend dev server proxies `/api` requests to the backend server.
-
 ## Usage
 
-### CLI Usage
-
 ```bash
-# Basic usage
-pnpm qa https://example.com
+# Start the TUI (interactive mode)
+bun start
+
+# Or with a URL directly
+bun start https://example.com
 
 # With custom goals
-pnpm qa https://example.com --goals "test login flow + form validation"
+bun start https://example.com --goals "test checkout flow"
 
-# With step limit
-pnpm qa https://example.com --maxSteps 10
-
-# With specific model
-pnpm qa https://example.com --model "anthropic/claude-3-haiku"
+# Development mode (with hot reload)
+bun dev
 
 # Show help
-pnpm qa --help
+bun start --help
 ```
 
-### Web Interface
+### Interactive Mode
 
-```bash
-# Start the web server
-pnpm web
+When you run without a URL, the TUI will prompt you to enter one:
 
-# The web interface will be available at http://localhost:3000
-# Features:
-# - Run tests via web UI
-# - View test history
-# - Browse screenshots and reports
-# - Real-time test progress via SSE
-```
+1. Enter the URL you want to test
+2. Watch the phases progress in real-time:
+   - **Init**: Opens browser and takes initial screenshot
+   - **Discovery**: Finds pages via sitemap or link crawling
+   - **Planning**: Creates intelligent test plan using LLM
+   - **Traversal**: Tests each discovered page
+   - **Execution**: Runs additional planned tests
+   - **Evaluation**: Generates final scored report
+3. View results summary with score and issues
+
+### Keyboard Shortcuts
+
+- `Enter` - Submit URL / Continue
+- `↑/↓` - Scroll through logs
+- `r` - Retry after error
+- `q` - Quit (when not running)
 
 ## Configuration
 
@@ -129,13 +84,12 @@ pnpm web
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | - | Your OpenRouter API key |
-| `OPENROUTER_MODEL` | No | `google/gemini-3-flash` | Default LLM model |
-| `MAX_STEPS` | No | `20` | Maximum test steps |
+| `OPENROUTER_MODEL` | No | `google/gemini-2.5-flash` | Default LLM model |
+| `MAX_STEPS` | No | `20` | Maximum test steps per page |
+| `MAX_PAGES` | No | `10` | Maximum pages to test |
+| `PARALLEL_BROWSERS` | No | `3` | Number of parallel browser instances |
 | `GOALS` | No | `homepage UX + primary CTA + form validation + keyboard` | Default test goals |
-| `SCREENSHOT_DIR` | No | `screenshots/` | Screenshot output directory |
-| `REPORT_DIR` | No | `reports/` | Report output directory |
 | `BROWSER_TIMEOUT` | No | `30000` | Browser command timeout (ms) |
-| `PORT` | No | `3000` | Web server port |
 | `DEBUG` | No | `false` | Enable verbose output |
 
 ### CLI Options
@@ -143,165 +97,129 @@ pnpm web
 | Option | Description |
 |--------|-------------|
 | `--goals <string>` | Test goals to focus on |
-| `--maxSteps <number>` | Maximum steps to execute |
-| `--model <string>` | OpenRouter model to use |
-| `--help` | Show help message |
+| `--help, -h` | Show help message |
+
+## Output
+
+Results are saved to `.ui-qa-runs/<run-id>/`:
+
+```
+.ui-qa-runs/
+└── cli-1234567890/
+    ├── run.json          # Run metadata and status
+    ├── report.json       # Full report with scores and issues
+    ├── evidence.json     # Detailed execution evidence
+    ├── report.md         # Human-readable markdown report
+    ├── llm-fix.txt       # Instructions for AI to fix issues
+    └── screenshots/      # All captured screenshots
+        ├── 00-initial.png
+        ├── step-01-after.png
+        └── ...
+```
+
+### Report Contents
+
+- **Score**: 0-100 quality score
+- **Summary**: Overall assessment
+- **Issues**: Categorized problems with:
+  - Severity (critical, high, medium, low)
+  - Category (accessibility, usability, performance, etc.)
+  - Reproduction steps
+  - Suggested fixes
+  - Screenshot evidence
 
 ## Project Structure
 
 ```
 .
-├── src/                    # Backend source code
-│   ├── cli.ts              # CLI entry point
+├── src/
+│   ├── cli-ink.tsx         # TUI entry point
 │   ├── config.ts           # Configuration management
 │   ├── agentBrowser.ts     # Browser automation wrapper
+│   ├── ink/                # TUI components
+│   │   ├── App.tsx         # Main TUI application
+│   │   ├── components/     # UI components
+│   │   │   ├── Header.tsx
+│   │   │   ├── UrlInput.tsx
+│   │   │   ├── PhaseIndicator.tsx
+│   │   │   ├── TaskList.tsx
+│   │   │   ├── LogStream.tsx
+│   │   │   └── ResultsSummary.tsx
+│   │   └── hooks/
+│   │       └── useQARunner.ts
 │   ├── qa/                 # QA core logic
 │   │   ├── planner.ts      # Test plan generation
 │   │   ├── executor.ts     # Test execution
 │   │   ├── judge.ts        # Result evaluation
-│   │   ├── run.ts          # CLI run orchestrator
-│   │   └── run-streaming.ts # Web streaming run orchestrator
-│   ├── web/                # Web server
-│   │   ├── server.ts       # Express HTTP server with SSE
-│   │   ├── convex.ts       # Convex HTTP API client
+│   │   ├── run-streaming.ts # Streaming run orchestrator
+│   │   ├── parallelTester.ts # Parallel page testing
 │   │   └── types.ts        # Type definitions
+│   ├── prompts/            # LLM prompts
+│   │   ├── planner.ts
+│   │   └── judge.ts
+│   ├── storage/
+│   │   └── local.ts        # Local file storage
 │   └── utils/              # Utility functions
 │       ├── browserPool.ts  # Browser instance pooling
 │       ├── sitemap.ts      # Sitemap parsing
 │       └── ...
-├── frontend/               # React frontend (source)
-│   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── store/          # Zustand state management
-│   │   └── lib/            # Utilities and types
-│   ├── vite.config.ts      # Vite build configuration
-│   └── package.json        # Frontend dependencies
-├── convex/                 # Convex backend
-│   ├── schema.ts           # Database schema
-│   ├── runs.ts             # Run management functions
-│   ├── users.ts            # User management functions
-│   ├── screenshots.ts      # Screenshot management
-│   └── auth.config.ts      # WorkOS AuthKit configuration
-├── dist/                   # Frontend build output (generated)
-├── screenshots/            # Generated screenshots
-└── reports/                # Generated reports
+├── tests/                  # Test files
+├── .ui-qa-runs/           # Generated results (gitignored)
+└── package.json
 ```
-
-## Output
-
-### Reports
-
-Reports are saved to `reports/<timestamp>-report.json` with:
-
-- **Score**: 0-100 quality score
-- **Summary**: Overall assessment
-- **Issues**: Categorized problems with severity, repro steps, and suggested fixes
-- **Artifacts**: Paths to screenshots and evidence files
-
-### Screenshots
-
-Screenshots are saved to `screenshots/<timestamp>/`:
-
-- `00-initial.png`: Initial page load
-- `step-XX-after.png`: After major interactions
-- `step-XX-error.png`: When errors occur
-
-### Evidence
-
-Raw test evidence is saved to `reports/<timestamp>-evidence.json` containing:
-
-- Executed plan and steps
-- DOM snapshots
-- Error logs
-- Screenshot mapping
 
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────────────────────┐
-                    │                   QA Pipeline                       │
-                    │  Planner (LLM) → Executor (Browser) → Judge (LLM)   │
-                    └─────────────────────────────────────────────────────┘
-                                            ↑
-                    ┌───────────────────────┴───────────────────────┐
-                    │                                               │
-            ┌───────┴───────┐                           ┌───────────┴───────────┐
-            │   CLI Mode    │                           │      Web Mode         │
-            │  (src/cli.ts) │                           │  (src/web/server.ts)  │
-            └───────────────┘                           └───────────┬───────────┘
-                                                                    │
-                                                        ┌───────────┴───────────┐
-                                                        │                       │
-                                            ┌───────────┴──────┐    ┌───────────┴───────────┐
-                                            │  React Frontend  │    │   Convex Backend      │
-                                            │   (frontend/)    │    │   (convex/)           │
-                                            │  - Components    │    │   - Database schema   │
-                                            │  - Zustand store │    │   - Auth (WorkOS)     │
-                                            │  - SSE client    │    │   - Run persistence   │
-                                            └──────────────────┘    └───────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Terminal UI (Ink)                         │
+│  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │URL Input │ │  Phases   │ │   Logs   │ │   Results    │  │
+│  └──────────┘ └───────────┘ └──────────┘ └──────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                     QA Pipeline                              │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐              │
+│  │  Planner   │ │  Executor  │ │   Judge    │              │
+│  │   (LLM)    │→│ (Browser)  │→│   (LLM)    │              │
+│  └────────────┘ └────────────┘ └────────────┘              │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Local Storage                             │
+│  Screenshots • Reports • Evidence • Markdown                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Components
+### Pipeline Components
 
-1. **Planner**: Analyzes the page DOM and creates intelligent test plans using LLM
+1. **Planner**: Analyzes page DOM and creates intelligent test plans using LLM
 2. **Executor**: Runs the plan step-by-step using real browser automation
 3. **Judge**: Evaluates test evidence and generates scored reports with issues
-4. **Express Server**: Serves the frontend and provides REST API + SSE streaming
-5. **Convex Backend**: Stores runs, screenshots, user data with WorkOS authentication
-6. **React Frontend**: Modern UI with real-time progress updates via SSE
 
-### Data Flow
-
-1. User submits URL via CLI or Web UI
-2. QA pipeline plans and executes tests
-3. Progress events streamed via SSE (web) or console (CLI)
-4. Results stored in Convex and returned to user
-5. Screenshots captured at key moments and stored with run
-
-## Convex Functions
-
-The project includes Convex functions for:
-
-- **Runs Management**: Store and query test runs
-- **Screenshots**: Manage screenshot storage and retrieval
-- **Schema**: Define data models for runs and screenshots
-
-See `convex/` directory for implementation details.
-
-## Testing
+## Building for Distribution
 
 ```bash
-# Run tests
-pnpm test
+# Build the CLI binary
+bun run build
+
+# The built CLI will be in dist/cli-ink.js
+# You can run it with: node dist/cli-ink.js
 ```
 
-## Troubleshooting
-
-### Convex Import Error
-
-If you see `Could not resolve "convex/server"`:
-
-1. Ensure `convex.config.ts` exists in the `convex/` directory
-2. Run `pnpm install` to ensure dependencies are installed
-3. Run `npx convex dev` to initialize Convex
-
-### Browser Installation
-
-If browser commands fail:
+## Publishing to npm
 
 ```bash
-# Reinstall browser
-pnpm dlx agent-browser install
+# Build and publish
+bun run prepublishOnly
+npm publish
 ```
 
-### Port Already in Use
-
-If port 3000 is already in use:
+After publishing, users can install and run:
 
 ```bash
-# Set a different port
-PORT=3001 pnpm web
+npx @utsav/ui-qa https://example.com
 ```
 
 ## Safety
@@ -311,6 +229,33 @@ PORT=3001 pnpm web
 - Redacts sensitive data from snapshots before LLM processing
 - Timeouts on all browser operations
 
+## Troubleshooting
+
+### Browser Installation
+
+If browser commands fail:
+
+```bash
+# Reinstall browser
+bunx playwright install chromium
+```
+
+### API Key Issues
+
+Make sure your `.env` file contains:
+
+```
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+### Debug Mode
+
+For verbose output:
+
+```bash
+DEBUG=true bun start https://example.com
+```
+
 ## License
 
-[Add your license here]
+MIT

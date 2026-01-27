@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Config } from "../config.js";
 import type { Report, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry, Step, PagePlan, AuditEntry } from "./types.js";
-import type { ProgressCallback, SSEEvent, QAPhase, PageStatus } from "../web/types.js";
+import type { ProgressCallback, SSEEvent, QAPhase, PageStatus } from "./progress-types.js";
 import { createAgentBrowser, type AgentBrowser } from "../agentBrowser.js";
 import { createPlan, createPagePlan } from "./planner.js";
 import { evaluateEvidence } from "./judge.js";
@@ -12,13 +12,13 @@ import { getTimestamp } from "../utils/time.js";
 import { fetchSitemap, crawlSitemap, formatSitemapForPlanner, type SitemapResult } from "../utils/sitemap.js";
 import { createBrowserPool } from "../utils/browserPool.js";
 import { testPagesInParallel, mergeParallelResults, type ParallelTestCallbacks } from "./parallelTester.js";
-import * as convex from "../web/convex.js";
+import * as localStorage from "../storage/local.js";
 
 export interface StreamingRunOptions {
   config: Config;
   url: string;
   goals?: string;
-  convexRunId: string;
+  convexRunId?: string; // Optional run ID, will be auto-generated if not provided
   onProgress: ProgressCallback;
 }
 
@@ -196,13 +196,19 @@ async function executeStep(
 }
 
 export async function runQAStreaming(options: StreamingRunOptions): Promise<StreamingRunResult> {
-  const { config, url, convexRunId, onProgress } = options;
+  const { config, url, onProgress } = options;
   const goals = options.goals || config.goals;
   const timestamp = getTimestamp();
+  
+  // Generate run ID for this session
+  const runId = options.convexRunId || `cli-${Date.now()}`;
 
-  // Use temp directory for screenshots (will be uploaded to Convex)
+  // Use temp directory for screenshots (will be saved locally)
   const screenshotDir = join(tmpdir(), `qa-screenshots-${timestamp}`);
   await ensureDir(screenshotDir);
+
+  // Create local run record
+  await localStorage.createLocalRun(runId, url, goals);
 
   const runAudits: AuditEntry[] = [];
   let initialScreenshotPath: string | null = null;
@@ -216,30 +222,29 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     debug: process.env.DEBUG === "true",
   });
 
-  // Map from local paths to Convex URLs
+  // Map from local paths to saved paths
   const screenshotUrlMap: Record<string, string> = {};
 
-  // Helper to upload screenshot to Convex and emit event
-  async function uploadAndEmitScreenshot(
+  // Helper to save screenshot locally and emit event
+  async function saveAndEmitScreenshot(
     localPath: string,
     stepIndex: number,
     label: string
   ): Promise<string> {
     try {
-      if (convex.isConvexConfigured()) {
-        const { url } = await convex.uploadScreenshot(localPath, convexRunId, stepIndex, label);
-        screenshotUrlMap[localPath] = url;
-        emit(onProgress, { type: "screenshot", url, stepIndex, label });
-        return url;
-      } else {
-        // Fallback: just emit local path
-        emit(onProgress, { type: "screenshot", url: localPath, stepIndex, label });
-        return localPath;
-      }
+      const { localPath: savedPath } = await localStorage.saveLocalScreenshot(
+        runId,
+        localPath,
+        stepIndex,
+        label
+      );
+      screenshotUrlMap[localPath] = savedPath;
+      emit(onProgress, { type: "screenshot", url: savedPath, stepIndex, label });
+      return savedPath;
     } catch (error) {
       emit(onProgress, {
         type: "log",
-        message: `Failed to upload screenshot: ${error}`,
+        message: `Failed to save screenshot: ${error}`,
         level: "warn",
       });
       return localPath;
@@ -257,7 +262,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     // Take initial screenshot and upload
     initialScreenshotPath = join(screenshotDir, "00-initial.png");
     await browser.screenshot(initialScreenshotPath);
-    await uploadAndEmitScreenshot(initialScreenshotPath, -1, "Initial page load");
+    await saveAndEmitScreenshot(initialScreenshotPath, -1, "Initial page load");
 
     if (config.auditsEnabled) {
       emit(onProgress, { type: "log", message: "Running DOM audits...", level: "info" });
@@ -280,7 +285,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
           try {
             const auditScreenshot = join(screenshotDir, `audit-${viewport.label}.png`);
             await browser.screenshot(auditScreenshot);
-            await uploadAndEmitScreenshot(auditScreenshot, -1, `Audit ${viewport.label}`);
+            await saveAndEmitScreenshot(auditScreenshot, -1, `Audit ${viewport.label}`);
             const audit = await runDomAudit(browser, url, viewport.label);
             runAudits.push({ ...audit, screenshotPath: auditScreenshot });
           } catch (error) {
@@ -300,7 +305,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
           });
           const auditScreenshot = join(screenshotDir, "audit-default.png");
           await browser.screenshot(auditScreenshot);
-          await uploadAndEmitScreenshot(auditScreenshot, -1, "Audit default");
+          await saveAndEmitScreenshot(auditScreenshot, -1, "Audit default");
           const audit = await runDomAudit(browser, url, "default");
           runAudits.push({ ...audit, screenshotPath: auditScreenshot });
         }
@@ -516,7 +521,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       },
 
       uploadScreenshot: async (localPath, stepIndex, label) => {
-        return await uploadAndEmitScreenshot(localPath, stepIndex, label);
+        return await saveAndEmitScreenshot(localPath, stepIndex, label);
       },
     };
 
@@ -593,7 +598,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
           try {
             await browser.screenshot(filepath);
             screenshotMap[filepath] = globalStepIndex;
-            await uploadAndEmitScreenshot(filepath, globalStepIndex, `Before ${step.type}`);
+            await saveAndEmitScreenshot(filepath, globalStepIndex, `Before ${step.type}`);
             screenshotCounter++;
           } catch {
             // Ignore screenshot errors
@@ -643,7 +648,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
           try {
             await browser.screenshot(filepath);
             screenshotMap[filepath] = globalStepIndex;
-            stepScreenshotUrl = await uploadAndEmitScreenshot(filepath, globalStepIndex, `After ${step.type}`);
+            stepScreenshotUrl = await saveAndEmitScreenshot(filepath, globalStepIndex, `After ${step.type}`);
             executedStep.screenshotPath = filepath;
             screenshotCounter++;
           } catch {
@@ -708,8 +713,8 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     emitPhaseStart(onProgress, "evaluation");
     emit(onProgress, { type: "log", message: "Evaluating test results...", level: "info" });
 
-    // Create a temporary evidence file path for the judge
-    const evidenceFilePath = `convex://runs/${convexRunId}/evidence`;
+    // Create evidence file path
+    const evidenceFilePath = join(localStorage.getLocalStorageDir(), runId, "screenshots");
 
     const { report: evaluatedReport } = await evaluateEvidence(config, evidence, evidenceFilePath);
 
@@ -748,23 +753,45 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       ),
     };
 
-    // Save to Convex
-    if (convex.isConvexConfigured()) {
-      try {
-        await convex.completeRun(
-          convexRunId,
-          reportWithUrls.score,
-          reportWithUrls.summary,
-          reportWithUrls,
-          evidenceWithUrls
-        );
-      } catch (error) {
-        emit(onProgress, {
-          type: "log",
-          message: `Failed to save to Convex: ${error}`,
-          level: "warn",
-        });
-      }
+    // Save run results to local storage
+    try {
+      await localStorage.completeLocalRun(
+        runId,
+        reportWithUrls.score,
+        reportWithUrls.summary,
+        reportWithUrls,
+        evidenceWithUrls
+      );
+
+      // Generate report.md and llm-fix.txt
+      const reportMdPath = await localStorage.generateReportMarkdown(runId, reportWithUrls);
+      const llmFixPath = await localStorage.generateLlmFixFile(runId, reportWithUrls);
+
+      // Update report artifacts with the generated files
+      reportWithUrls.artifacts.reportFile = reportMdPath;
+      reportWithUrls.artifacts.llmFixFile = llmFixPath;
+
+      emit(onProgress, {
+        type: "log",
+        message: `Results saved to ${localStorage.getLocalStorageDir()}/${runId}`,
+        level: "info",
+      });
+      emit(onProgress, {
+        type: "log",
+        message: `Report: ${reportMdPath}`,
+        level: "info",
+      });
+      emit(onProgress, {
+        type: "log",
+        message: `LLM Fix Guide: ${llmFixPath}`,
+        level: "info",
+      });
+    } catch (error) {
+      emit(onProgress, {
+        type: "log",
+        message: `Failed to save locally: ${error}`,
+        level: "warn",
+      });
     }
 
     emitPhaseComplete(onProgress, "evaluation");
@@ -783,13 +810,11 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    // Try to fail the run in Convex
-    if (convex.isConvexConfigured()) {
-      try {
-        await convex.failRun(convexRunId, errorMessage);
-      } catch (convexError) {
-        // Ignore convex errors during error handling
-      }
+    // Save failure status to local storage
+    try {
+      await localStorage.failLocalRun(runId, errorMessage);
+    } catch {
+      // Ignore local storage errors during error handling
     }
 
     emit(onProgress, {
