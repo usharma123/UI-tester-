@@ -82,14 +82,17 @@ bun start validate --help
 When you run without a URL, the TUI will prompt you to enter one:
 
 1. Enter the URL you want to test
-2. Watch the phases progress in real-time:
+2. **Select testing mode** using arrow keys:
+   - **Coverage-Guided Exploration** (default): Smart exploration that maximizes coverage using state tracking and beam search
+   - **Parallel Page Testing**: Fast systematic testing of discovered pages using multiple browsers
+3. Watch the phases progress in real-time:
    - **Init**: Opens browser and takes initial screenshot
    - **Discovery**: Finds pages via sitemap or link crawling
    - **Planning**: Creates intelligent test plan using LLM
-   - **Traversal**: Tests each discovered page
+   - **Traversal**: Tests using your selected mode
    - **Execution**: Runs additional planned tests
    - **Evaluation**: Generates final scored report
-3. View results summary with score and issues
+4. View results summary with score and issues
 
 ### Validation Mode
 
@@ -109,8 +112,8 @@ The validation mode validates a website against a specification document:
 
 ### Keyboard Shortcuts
 
-- `Enter` - Submit URL / Continue
-- `↑/↓` - Scroll through logs
+- `Enter` - Submit URL / Confirm selection / Continue
+- `↑/↓` - Select testing mode / Scroll through logs
 - `r` - Retry after error
 - `q` - Quit (when not running)
 
@@ -312,19 +315,33 @@ reports/
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                     QA Pipeline                             │
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐               │
-│  │  Planner   │ │  Executor  │ │   Judge    │               │
-│  │   (LLM)    │→│ (Browser)  │→│   (LLM)    │               │
-│  └────────────┘ └────────────┘ └────────────┘               │
+│              Phase 1: Init + Phase 2: Discovery             │
+│  ┌────────────────────┐    ┌────────────────────────────┐   │
+│  │  Browser + Audits  │ →  │  Sitemap/Link Crawling     │   │
+│  └────────────────────┘    └────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│              Coverage-Guided Exploration                    │
+│                   Phase 3: Planning                         │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  LLM Planner (uses discovery results to create plan) │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│         Phase 4: Traversal (Coverage-Guided by default)     │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐    │
 │  │ Coverage │ │  State   │ │  Budget  │ │  Explorer    │    │
 │  │ Tracker  │ │ Tracker  │ │ Tracker  │ │  Engine      │    │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘    │
+│  Alternative: Parallel page testing (COVERAGE_GUIDED=false) │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│      Phase 5: Execution + Phase 6: Evaluation               │
+│  ┌────────────────────┐    ┌────────────────────────────┐   │
+│  │ Additional Tests   │ →  │  Judge (LLM Evaluation)    │   │
+│  └────────────────────┘    └────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -335,17 +352,22 @@ reports/
 
 ### Pipeline Components
 
-**Test Mode:**
-1. **Planner**: Analyzes page DOM and creates intelligent test plans using LLM
-2. **Executor**: Runs the plan step-by-step using real browser automation
-3. **Judge**: Evaluates test evidence and generates scored reports with issues
+**Test Mode (6 Phases):**
+1. **Init**: Opens browser, takes initial screenshot, runs DOM audits
+2. **Discovery**: Discovers site structure via sitemap.xml, robots.txt, or link crawling
+3. **Planner**: Analyzes page DOM + discovery results and creates intelligent test plans using LLM
+4. **Traversal**: Tests the site using coverage-guided exploration (default) or parallel page testing
+5. **Execution**: Runs additional planned tests from the LLM plan
+6. **Evaluation**: Judge (LLM) evaluates test evidence and generates scored reports with issues
 
-**Coverage-Guided Exploration (Advanced):**
+**Coverage-Guided Exploration (Default):**
 1. **Coverage Tracker**: Monitors URLs, forms, dialogs, and interactions visited
 2. **State Tracker**: Fingerprints page states to detect revisits and transitions
 3. **Budget Tracker**: Enforces exploration limits (steps, states, time, stagnation)
 4. **Action Selector**: Scores actions by novelty, business criticality, risk, and branch factor
 5. **Explorer Engine**: Executes coverage-guided exploration with beam search and backtracking
+
+Set `COVERAGE_GUIDED=false` to use parallel page testing instead.
 
 **Validation Mode:**
 1. **Parser**: Parses specification documents (Markdown)

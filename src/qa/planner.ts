@@ -134,7 +134,7 @@ export async function createPlan(
       }
 
       lastError = new Error(
-        `Schema validation failed: ${validated.error.errors.map((e) => e.message).join(", ")}`
+        `Schema validation failed: ${validated.error.issues.map((e: { message: string }) => e.message).join(", ")}`
       );
     } catch (parseError) {
       lastError = parseError instanceof Error ? parseError : new Error(String(parseError));
@@ -208,7 +208,7 @@ export async function createPagePlan(
       }
 
       lastError = new Error(
-        `Schema validation failed: ${validated.error.errors.map((e) => e.message).join(", ")}`
+        `Schema validation failed: ${validated.error.issues.map((e: { message: string }) => e.message).join(", ")}`
       );
     } catch (parseError) {
       lastError = parseError instanceof Error ? parseError : new Error(String(parseError));

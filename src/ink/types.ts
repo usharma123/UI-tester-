@@ -1,8 +1,11 @@
 import type { Report, Evidence, Step, ExecutedStepStatus } from "../qa/types.js";
 import type { QAPhase, SSEEvent, SitemapUrl } from "../qa/progress-types.js";
 
+// Exploration mode selection
+export type ExplorationMode = "coverage_guided" | "parallel";
+
 // App state machine
-export type AppMode = "setup" | "input" | "running" | "complete" | "error";
+export type AppMode = "setup" | "input" | "mode_select" | "running" | "complete" | "error";
 
 // Task status for UI display
 export type TaskStatus = "pending" | "running" | "success" | "failed" | "skipped";
@@ -30,6 +33,7 @@ export interface AppState {
   mode: AppMode;
   url: string;
   goals: string;
+  explorationMode: ExplorationMode;
 
   // Phase tracking
   currentPhase: QAPhase | null;
@@ -81,6 +85,7 @@ export const initialState: AppState = {
   mode: "input",
   url: "",
   goals: "",
+  explorationMode: "coverage_guided",
   currentPhase: null,
   completedPhases: [],
   tasks: [],
@@ -108,6 +113,7 @@ export type AppAction =
   | { type: "SET_MODE"; mode: AppMode }
   | { type: "SET_URL"; url: string }
   | { type: "SET_GOALS"; goals: string }
+  | { type: "SET_EXPLORATION_MODE"; explorationMode: ExplorationMode }
   | { type: "START_RUN" }
   | { type: "PROCESS_EVENT"; event: SSEEvent }
   | { type: "SET_ERROR"; error: string }

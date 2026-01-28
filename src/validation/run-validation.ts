@@ -25,6 +25,17 @@ import {
 } from "./traceability.js";
 import { createAgentBrowser, type AgentBrowser } from "../agentBrowser.js";
 import { createBrowserPool } from "../utils/browserPool.js";
+import type { Config, BudgetConfig } from "../config.js";
+
+// Default budget config for validation runs
+const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
+  maxStepsPerPageState: 10,
+  maxUniqueStates: 100,
+  maxTotalSteps: 500,
+  stagnationThreshold: 15,
+  maxDepth: 10,
+  maxTimeMs: 600000,
+};
 import {
   fetchSitemap,
   crawlSitemap,
@@ -49,8 +60,8 @@ export interface ValidationRunResult {
 }
 
 // Helper to emit events with timestamp
-function emit(callback: ProgressCallback, event: Omit<SSEEvent, "timestamp">) {
-  callback({ ...event, timestamp: Date.now() } as SSEEvent);
+function emit<T extends { type: string }>(callback: ProgressCallback, event: T) {
+  callback({ ...event, timestamp: Date.now() } as unknown as SSEEvent);
 }
 
 // Helper to emit validation phase events
@@ -240,27 +251,37 @@ export async function runValidation(
     const sitemapContext = formatSitemapForPlanner(sitemap);
     const sitemapUrls = sitemap.urls.map((u) => u.loc);
 
+    const qaConfig: Config = {
+      openRouterApiKey: config.openRouterApiKey,
+      openRouterModel: config.openRouterModel,
+      maxSteps: 20,
+      goals: requirementGoals,
+      screenshotDir,
+      reportDir: config.outputDir,
+      browserTimeout: config.browserTimeout,
+      navigationTimeout: config.navigationTimeout,
+      actionTimeout: config.actionTimeout,
+      maxRetries: 3,
+      retryDelayMs: 1000,
+      maxPages: config.maxPages,
+      stepsPerPage: config.stepsPerPage,
+      parallelBrowsers: config.parallelBrowsers,
+      auditsEnabled: false,
+      strictMode: false,
+      captureBeforeAfterScreenshots: true,
+      viewports: [{ label: "desktop", width: 1365, height: 768 }],
+      budgetConfig: DEFAULT_BUDGET_CONFIG,
+      explorationMode: "coverage_guided",
+      beamWidth: 3,
+      coverageGuidedEnabled: false,
+      visualAuditsEnabled: false,
+      baselineDir: ".ui-qa/baselines",
+      diffThreshold: 5,
+      authFixtureDir: ".ui-qa/auth-fixtures",
+    };
+
     const { plan } = await createPlan(
-      {
-        openRouterApiKey: config.openRouterApiKey,
-        openRouterModel: config.openRouterModel,
-        maxSteps: 20,
-        goals: requirementGoals,
-        screenshotDir,
-        reportDir: config.outputDir,
-        browserTimeout: config.browserTimeout,
-        navigationTimeout: config.navigationTimeout,
-        actionTimeout: config.actionTimeout,
-        maxRetries: 3,
-        retryDelayMs: 1000,
-        maxPages: config.maxPages,
-        stepsPerPage: config.stepsPerPage,
-        parallelBrowsers: config.parallelBrowsers,
-        auditsEnabled: false,
-        strictMode: false,
-        captureBeforeAfterScreenshots: true,
-        viewports: [{ label: "desktop", width: 1365, height: 768 }],
-      },
+      qaConfig,
       config.url,
       requirementGoals,
       initialSnapshot,
@@ -296,7 +317,7 @@ export async function runValidation(
       debug: process.env.DEBUG === "true",
     });
 
-    const qaConfig = {
+    const testConfig: Config = {
       openRouterApiKey: config.openRouterApiKey,
       openRouterModel: config.openRouterModel,
       maxSteps: 20,
@@ -315,6 +336,14 @@ export async function runValidation(
       strictMode: false,
       captureBeforeAfterScreenshots: true,
       viewports: [{ label: "desktop", width: 1365, height: 768 }],
+      budgetConfig: DEFAULT_BUDGET_CONFIG,
+      explorationMode: "coverage_guided",
+      beamWidth: 3,
+      coverageGuidedEnabled: false,
+      visualAuditsEnabled: false,
+      baselineDir: ".ui-qa/baselines",
+      diffThreshold: 5,
+      authFixtureDir: ".ui-qa/auth-fixtures",
     };
 
     try {
@@ -322,7 +351,7 @@ export async function runValidation(
       const parallelResults = await testPagesInParallel(
         pagesToTest,
         browserPool,
-        qaConfig,
+        testConfig,
         screenshotDir,
         {
           onPageStart: (url: string, pageIndex: number) => {
@@ -352,7 +381,7 @@ export async function runValidation(
                 type: step.step.type,
                 selector: step.step.selector,
                 result: step.result || "",
-                screenshot: step.screenshotUrl,
+                screenshot: step.screenshotPath,
               });
             }
             // Collect screenshots

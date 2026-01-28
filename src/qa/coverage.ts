@@ -534,15 +534,3 @@ export function formatCoverageStats(stats: CoverageStats): string {
   ].join("\n");
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export type {
-  CoverageMetrics,
-  CoverageSnapshot,
-  CoverageGain,
-  ActionOutcome,
-  CoverageTracker,
-  CoverageStats,
-};

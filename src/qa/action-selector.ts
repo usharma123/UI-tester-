@@ -574,13 +574,3 @@ export function formatCandidate(candidate: ActionCandidate): string {
   ].join("\n");
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export type {
-  ActionCandidate,
-  ActionSelectorConfig,
-  ScoringContext,
-  ActionSelector,
-};

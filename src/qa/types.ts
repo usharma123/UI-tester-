@@ -1,3 +1,7 @@
+// Import types needed locally
+import type { CoverageStats as CoverageStatsType } from "./coverage.js";
+import type { BudgetStatus as BudgetStatusType } from "./budget.js";
+
 export type StepType = "open" | "snapshot" | "click" | "fill" | "press" | "getText" | "screenshot" | "hover";
 
 export interface Step {
@@ -165,9 +169,9 @@ export interface Evidence {
   screenshotMap: Record<string, number>;
   audits?: AuditEntry[];
   /** Coverage statistics (if coverage tracking was enabled) */
-  coverageStats?: CoverageStats;
+  coverageStats?: CoverageStatsType;
   /** Budget status at end of run (if budget tracking was enabled) */
-  budgetStatus?: BudgetStatus;
+  budgetStatus?: BudgetStatusType;
   /** Number of unique states visited */
   uniqueStatesVisited?: number;
   /** Exploration mode used */

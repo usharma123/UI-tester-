@@ -698,17 +698,3 @@ export function formatFixtureList(fixtures: AuthFixture[]): string {
     .join("\n\n");
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export type {
-  AuthFixture,
-  AuthRequirement,
-  AuthType,
-  CaptchaDetection,
-  CaptchaType,
-  StorageState,
-  AuthManager,
-  SaveFixtureOptions,
-};

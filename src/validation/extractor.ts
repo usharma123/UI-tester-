@@ -108,7 +108,7 @@ export async function extractRequirements(
       }
 
       lastError = new Error(
-        `Schema validation failed: ${validated.error.errors.map((e) => e.message).join(", ")}`
+        `Schema validation failed: ${validated.error.issues.map((e: { message: string }) => e.message).join(", ")}`
       );
     } catch (parseError) {
       lastError =

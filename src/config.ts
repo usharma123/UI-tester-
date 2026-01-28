@@ -120,7 +120,7 @@ const DEFAULT_CONFIG = {
   budgetConfig: DEFAULT_BUDGET_CONFIG,
   explorationMode: "coverage_guided" as ExplorationMode,
   beamWidth: 3,
-  coverageGuidedEnabled: false, // Disabled by default, enable with --coverage-guided
+  coverageGuidedEnabled: true, // Enabled by default for coverage-guided exploration
   // Visual audit defaults
   visualAuditsEnabled: true,
   baselineDir: ".ui-qa/baselines",

@@ -343,14 +343,3 @@ export function formatExhaustionReason(reason: BudgetExhaustionReason): string {
   return messages[reason] || reason;
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export type {
-  BudgetConfig,
-  BudgetStatus,
-  BudgetExhaustionReason,
-  BudgetEvent,
-  BudgetTracker,
-};

@@ -474,8 +474,3 @@ export function createStateTracker(): StateTracker {
   };
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export type { StateFingerprint, StateTransition, StateHistory, StateTracker };

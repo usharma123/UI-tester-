@@ -2,11 +2,18 @@ import { useState, useCallback, useRef } from "react";
 import { runQAStreaming, type StreamingRunOptions } from "../../qa/run-streaming.js";
 import { loadConfig } from "../../config.js";
 import type { SSEEvent } from "../../qa/progress-types.js";
+import type { ExplorationMode } from "../types.js";
 
 type EventHandler = (event: SSEEvent) => void;
 
+interface StartRunOptions {
+  url: string;
+  goals?: string;
+  explorationMode?: ExplorationMode;
+}
+
 interface UseQARunnerResult {
-  startRun: (url: string, goals?: string) => Promise<void>;
+  startRun: (options: StartRunOptions) => Promise<void>;
   isRunning: boolean;
   error: string | null;
 }
@@ -17,7 +24,7 @@ export function useQARunner(onEvent: EventHandler): UseQARunnerResult {
   const abortRef = useRef(false);
 
   const startRun = useCallback(
-    async (url: string, goals?: string) => {
+    async ({ url, goals, explorationMode = "coverage_guided" }: StartRunOptions) => {
       if (isRunning) {
         return;
       }
@@ -29,6 +36,9 @@ export function useQARunner(onEvent: EventHandler): UseQARunnerResult {
       try {
         // Load config from environment
         const config = loadConfig(goals ? { goals } : {});
+
+        // Override coverage-guided setting based on user selection
+        config.coverageGuidedEnabled = explorationMode === "coverage_guided";
 
         // Generate a unique run ID for this CLI session
         // Since we're running locally, we don't have a Convex run ID

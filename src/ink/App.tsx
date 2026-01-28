@@ -1,12 +1,13 @@
 import React, { useReducer, useEffect, useCallback, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import type { AppState, AppAction, AppMode, Task, TaskStatus } from "./types.js";
+import type { AppState, AppAction, AppMode, Task, TaskStatus, ExplorationMode } from "./types.js";
 import { initialState } from "./types.js";
 import type { SSEEvent, QAPhase } from "../qa/progress-types.js";
 import type { UpdateInfo } from "../updates/types.js";
 import { Header } from "./components/Header.js";
 import { SetupPrompt } from "./components/SetupPrompt.js";
 import { UrlInput } from "./components/UrlInput.js";
+import { ModeSelector } from "./components/ModeSelector.js";
 import { TaskList } from "./components/TaskList.js";
 import { PhaseIndicator } from "./components/PhaseIndicator.js";
 import { ProgressBar } from "./components/ProgressBar.js";
@@ -54,6 +55,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_GOALS":
       return { ...state, goals: action.goals };
 
+    case "SET_EXPLORATION_MODE":
+      return { ...state, explorationMode: action.explorationMode };
+
     case "START_RUN":
       return {
         ...state,
@@ -78,7 +82,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, mode: "error", error: action.error };
 
     case "RESET":
-      return { ...initialState, url: state.url, goals: state.goals };
+      return { ...initialState, url: state.url, goals: state.goals, explorationMode: state.explorationMode };
 
     case "PROCESS_EVENT":
       return processEvent(state, action.event);
@@ -287,22 +291,29 @@ export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.R
   // QA runner hook
   const { startRun, isRunning } = useQARunner(handleEvent);
 
-  // Start run automatically if URL provided via CLI
+  // Start run automatically if URL provided via CLI (skip mode selection)
   useEffect(() => {
     if (initialUrl && hasApiKey && state.mode === "input") {
-      handleStartRun(initialUrl, initialGoals);
+      dispatch({ type: "SET_URL", url: initialUrl });
+      if (initialGoals) dispatch({ type: "SET_GOALS", goals: initialGoals });
+      // Skip mode selection when URL provided via CLI, use default mode
+      handleStartRun(initialUrl, initialGoals, state.explorationMode);
     }
   }, []);
 
   // Handle starting the QA run
   const handleStartRun = useCallback(
-    async (url: string, goals?: string) => {
+    async (url: string, goals?: string, explorationMode?: ExplorationMode) => {
       dispatch({ type: "SET_URL", url });
       if (goals) dispatch({ type: "SET_GOALS", goals });
       dispatch({ type: "START_RUN" });
 
       try {
-        await startRun(url, goals);
+        await startRun({
+          url,
+          goals,
+          explorationMode: explorationMode || state.explorationMode,
+        });
       } catch (error) {
         dispatch({
           type: "SET_ERROR",
@@ -310,16 +321,27 @@ export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.R
         });
       }
     },
-    [startRun]
+    [startRun, state.explorationMode]
   );
 
-  // Handle URL submit from input
+  // Handle URL submit from input - go to mode selection
   const handleUrlSubmit = useCallback(
     (url: string) => {
-      handleStartRun(url, state.goals || undefined);
+      dispatch({ type: "SET_URL", url });
+      dispatch({ type: "SET_MODE", mode: "mode_select" });
     },
-    [handleStartRun, state.goals]
+    []
   );
+
+  // Handle mode selection submit - start the run
+  const handleModeSubmit = useCallback(() => {
+    handleStartRun(state.url, state.goals || undefined, state.explorationMode);
+  }, [handleStartRun, state.url, state.goals, state.explorationMode]);
+
+  // Handle exploration mode change
+  const handleModeChange = useCallback((mode: ExplorationMode) => {
+    dispatch({ type: "SET_EXPLORATION_MODE", explorationMode: mode });
+  }, []);
 
   // Keyboard shortcuts
   useInput((input, key) => {
@@ -364,6 +386,20 @@ export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.R
           onChange={(url) => dispatch({ type: "SET_URL", url })}
           onSubmit={handleUrlSubmit}
         />
+      )}
+
+      {state.mode === "mode_select" && (
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text>URL: </Text>
+            <Text color="cyan">{state.url}</Text>
+          </Box>
+          <ModeSelector
+            selectedMode={state.explorationMode}
+            onModeChange={handleModeChange}
+            onSubmit={handleModeSubmit}
+          />
+        </Box>
       )}
 
       {state.mode === "running" && (

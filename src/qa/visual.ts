@@ -867,15 +867,3 @@ export function countIssuesBySeverity(
   };
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export type {
-  VisualIssue,
-  VisualAuditResult,
-  VisualAuditConfig,
-  ScreenshotBaseline,
-  MaskRegion,
-  ScreenshotComparisonResult,
-};

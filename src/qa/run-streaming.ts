@@ -35,8 +35,8 @@ export interface StreamingRunResult {
 }
 
 // Helper to emit events with timestamp
-function emit(callback: ProgressCallback, event: Omit<SSEEvent, "timestamp">) {
-  callback({ ...event, timestamp: Date.now() } as SSEEvent);
+function emit<T extends { type: string }>(callback: ProgressCallback, event: T) {
+  callback({ ...event, timestamp: Date.now() } as unknown as SSEEvent);
 }
 
 // Helper to emit phase events
@@ -426,143 +426,278 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
 
     emitPhaseComplete(onProgress, "planning");
 
-    // === Phase 4: Per-Page Traversal (Systematic Testing) ===
+    // === Phase 4: Traversal (Coverage-Guided or Parallel Page Testing) ===
     emitPhaseStart(onProgress, "traversal");
 
-    const parallelCount = config.parallelBrowsers;
-    emit(onProgress, {
-      type: "log",
-      message: `Starting parallel page testing with ${parallelCount} browsers...`,
-      level: "info"
-    });
+    // Shared result variables
+    let executedSteps: ExecutedStep[] = [];
+    let snapshots: SnapshotEntry[] = [];
+    let errors: ErrorEntry[] = [];
+    let screenshotMap: Record<string, number> = {};
+    let pageAudits: AuditEntry[] = [];
+    let globalStepIndex = 0;
+    let screenshotCounter = 1;
+    let blocked = false;
+    
+    // Pages to test - used in parallel mode and for filtering additional steps
+    let pagesToTest = sitemap.urls.slice(0, config.maxPages);
 
-    // Limit pages to test based on config
-    const pagesToTest = sitemap.urls.slice(0, config.maxPages);
+    if (config.coverageGuidedEnabled) {
+      // === Coverage-Guided Exploration Mode ===
+      emit(onProgress, {
+        type: "log",
+        message: "Starting coverage-guided exploration...",
+        level: "info"
+      });
 
-    // Progress tracking
-    let pagesCompleted = 0;
-    const pageProgress = {
-      tested: 0,
-      skipped: 0,
-      remaining: pagesToTest.length,
-      total: pagesToTest.length,
-    };
+      // Create trackers for coverage-guided exploration
+      const stateTracker = createStateTracker();
+      const budgetTracker = createBudgetTracker(config.budgetConfig);
+      const coverageTracker = createCoverageTracker();
 
-    // Create browser pool for parallel execution
-    const browserPool = createBrowserPool(parallelCount, {
-      timeout: config.browserTimeout,
-      navigationTimeout: config.navigationTimeout,
-      actionTimeout: config.actionTimeout,
-      maxRetries: config.maxRetries,
-      retryDelayMs: config.retryDelayMs,
-      debug: process.env.DEBUG === "true",
-    });
+      // Create explorer using the existing browser
+      const explorer = createExplorer(browser, coverageTracker, stateTracker, budgetTracker, {
+        strategy: config.explorationMode,
+        beamWidth: config.beamWidth,
+      });
 
-    // Set up callbacks for parallel tester
-    const parallelCallbacks: ParallelTestCallbacks = {
-      onPageStart: (url, pageIndex) => {
-        emit(onProgress, {
-          type: "page_start",
-          url,
-          pageIndex,
-          totalPages: pagesToTest.length,
-        });
-        emit(onProgress, {
-          type: "log",
-          message: `[Browser ${browserPool.getActiveCount()}/${parallelCount}] Testing page ${pageIndex + 1}/${pagesToTest.length}: ${url}`,
-          level: "info",
-        });
-      },
+      // Run exploration with callbacks
+      const explorationResult = await explorer.explore({
+        onStart: () => {
+          emit(onProgress, { type: "log", message: "Exploration started", level: "info" });
+        },
+        onBeforeAction: (action, stepIndex) => {
+          emit(onProgress, {
+            type: "step_start",
+            stepIndex,
+            step: {
+              type: action.actionType as Step["type"],
+              selector: action.selector,
+              goal: `${action.actionType} on "${action.element.text.slice(0, 50)}"`,
+            },
+            totalSteps: config.budgetConfig.maxTotalSteps,
+          });
+          emit(onProgress, {
+            type: "log",
+            message: `Step ${stepIndex + 1}: ${action.actionType} on "${action.element.text.slice(0, 30)}"`,
+            level: "info",
+          });
+        },
+        onAfterAction: async (step) => {
+          const gain = step.coverageGain.hasGain ? ` (+${step.coverageGain.totalGain} coverage)` : "";
+          emit(onProgress, {
+            type: "step_complete",
+            stepIndex: step.index,
+            status: step.success ? "success" : "failed",
+            result: step.success ? `Completed ${step.action.actionType}${gain}` : undefined,
+            error: step.error,
+          });
+          emit(onProgress, {
+            type: "log",
+            message: `Step ${step.index + 1} ${step.success ? "succeeded" : "failed"}${gain}`,
+            level: step.success ? "info" : "warn",
+          });
 
-      onPageComplete: (result) => {
-        pagesCompleted++;
+          // Take screenshot after each action
+          const filename = `step-${String(screenshotCounter).padStart(2, "0")}-after.png`;
+          const filepath = join(screenshotDir, filename);
+          try {
+            await browser.screenshot(filepath);
+            screenshotMap[filepath] = step.index;
+            await saveAndEmitScreenshot(filepath, step.index, `After ${step.action.actionType}`);
+            screenshotCounter++;
+          } catch {
+            // Ignore screenshot errors
+          }
 
-        // Update progress
-        if (result.status === "success") {
-          pageProgress.tested++;
-        } else if (result.status === "skipped") {
-          pageProgress.skipped++;
-        }
-        pageProgress.remaining = pagesToTest.length - pagesCompleted;
+          // Convert exploration step to executed step
+          const executedStep: ExecutedStep = {
+            index: step.index,
+            step: {
+              type: step.action.actionType as Step["type"],
+              selector: step.action.selector,
+              note: `${step.action.actionType} on "${step.action.element.text.slice(0, 50)}"`,
+            },
+            status: step.success ? "success" : "failed",
+            timestamp: step.timestamp,
+            result: step.success ? `Completed ${step.action.actionType}` : undefined,
+            error: step.error,
+          };
+          executedSteps.push(executedStep);
 
-        emit(onProgress, {
-          type: "page_complete",
-          url: result.url,
-          pageIndex: result.pageIndex,
-          status: result.status,
-          screenshotUrl: result.screenshotUrl,
-          stepsExecuted: result.stepsExecuted,
-          error: result.error,
-        });
+          if (!step.success && step.error) {
+            errors.push({ stepIndex: step.index, error: step.error });
+          }
+        },
+        onComplete: (result) => {
+          emit(onProgress, {
+            type: "log",
+            message: `Exploration complete: ${result.terminationReason} (${result.steps.length} steps, ${result.uniqueStates} states)`,
+            level: "info",
+          });
+        },
+        onError: (error, stepIndex) => {
+          emit(onProgress, {
+            type: "log",
+            message: `Error at step ${stepIndex}: ${error.message}`,
+            level: "error",
+          });
+        },
+        onLog: (message, level) => {
+          emit(onProgress, { type: "log", message, level });
+        },
+      });
 
-        emit(onProgress, {
-          type: "pages_progress",
-          tested: pageProgress.tested,
-          skipped: pageProgress.skipped,
-          remaining: pageProgress.remaining,
-          total: pageProgress.total,
-        });
-      },
+      // Update global step index
+      globalStepIndex = explorationResult.steps.length;
 
-      onStepStart: (pageIndex, stepIndex, step, totalSteps) => {
-        emit(onProgress, {
-          type: "step_start",
-          stepIndex,
-          step,
-          totalSteps,
-        });
-      },
+      // Report coverage stats
+      const stats = coverageTracker.getStats();
+      emit(onProgress, {
+        type: "log",
+        message: `Coverage: ${stats.coverageScore.toFixed(0)}/100 | URLs: ${stats.totalUrls} | Forms: ${stats.totalForms} | Elements: ${stats.totalInteractions}`,
+        level: "info",
+      });
 
-      onStepComplete: (pageIndex, stepIndex, status, result, error) => {
-        emit(onProgress, {
-          type: "step_complete",
-          stepIndex,
-          status,
-          result,
-          error,
-        });
-      },
+      // Check if exploration was blocked
+      blocked = explorationResult.terminationReason === "error";
 
-      onLog: (message, level) => {
-        emit(onProgress, { type: "log", message, level });
-      },
+    } else {
+      // === Traditional Parallel Page Testing Mode ===
+      const parallelCount = config.parallelBrowsers;
+      emit(onProgress, {
+        type: "log",
+        message: `Starting parallel page testing with ${parallelCount} browsers...`,
+        level: "info"
+      });
 
-      uploadScreenshot: async (localPath, stepIndex, label) => {
-        return await saveAndEmitScreenshot(localPath, stepIndex, label);
-      },
-    };
+      // pagesToTest is already initialized before the if-else block
 
-    // Run parallel page testing
-    let parallelResults;
-    try {
-      parallelResults = await testPagesInParallel(
-        pagesToTest,
-        browserPool,
-        config,
-        screenshotDir,
-        parallelCallbacks
-      );
-    } finally {
-      // Always close all browsers in the pool
-      await browserPool.closeAll();
+      // Progress tracking
+      let pagesCompleted = 0;
+      const pageProgress = {
+        tested: 0,
+        skipped: 0,
+        remaining: pagesToTest.length,
+        total: pagesToTest.length,
+      };
+
+      // Create browser pool for parallel execution
+      const browserPool = createBrowserPool(parallelCount, {
+        timeout: config.browserTimeout,
+        navigationTimeout: config.navigationTimeout,
+        actionTimeout: config.actionTimeout,
+        maxRetries: config.maxRetries,
+        retryDelayMs: config.retryDelayMs,
+        debug: process.env.DEBUG === "true",
+      });
+
+      // Set up callbacks for parallel tester
+      const parallelCallbacks: ParallelTestCallbacks = {
+        onPageStart: (url, pageIndex) => {
+          emit(onProgress, {
+            type: "page_start",
+            url,
+            pageIndex,
+            totalPages: pagesToTest.length,
+          });
+          emit(onProgress, {
+            type: "log",
+            message: `[Browser ${browserPool.getActiveCount()}/${parallelCount}] Testing page ${pageIndex + 1}/${pagesToTest.length}: ${url}`,
+            level: "info",
+          });
+        },
+
+        onPageComplete: (result) => {
+          pagesCompleted++;
+
+          // Update progress
+          if (result.status === "success") {
+            pageProgress.tested++;
+          } else if (result.status === "skipped") {
+            pageProgress.skipped++;
+          }
+          pageProgress.remaining = pagesToTest.length - pagesCompleted;
+
+          emit(onProgress, {
+            type: "page_complete",
+            url: result.url,
+            pageIndex: result.pageIndex,
+            status: result.status,
+            screenshotUrl: result.screenshotUrl,
+            stepsExecuted: result.stepsExecuted,
+            error: result.error,
+          });
+
+          emit(onProgress, {
+            type: "pages_progress",
+            tested: pageProgress.tested,
+            skipped: pageProgress.skipped,
+            remaining: pageProgress.remaining,
+            total: pageProgress.total,
+          });
+        },
+
+        onStepStart: (pageIndex, stepIndex, step, totalSteps) => {
+          emit(onProgress, {
+            type: "step_start",
+            stepIndex,
+            step,
+            totalSteps,
+          });
+        },
+
+        onStepComplete: (pageIndex, stepIndex, status, result, error) => {
+          emit(onProgress, {
+            type: "step_complete",
+            stepIndex,
+            status,
+            result,
+            error,
+          });
+        },
+
+        onLog: (message, level) => {
+          emit(onProgress, { type: "log", message, level });
+        },
+
+        uploadScreenshot: async (localPath, stepIndex, label) => {
+          return await saveAndEmitScreenshot(localPath, stepIndex, label);
+        },
+      };
+
+      // Run parallel page testing
+      let parallelResults;
+      try {
+        parallelResults = await testPagesInParallel(
+          pagesToTest,
+          browserPool,
+          config,
+          screenshotDir,
+          parallelCallbacks
+        );
+      } finally {
+        // Always close all browsers in the pool
+        await browserPool.closeAll();
+      }
+
+      // Merge results from parallel execution
+      const merged = mergeParallelResults(parallelResults);
+      executedSteps = merged.executedSteps;
+      snapshots = merged.snapshots;
+      errors = merged.errors;
+      screenshotMap = merged.screenshotMap;
+      pageAudits = merged.audits;
+
+      // Calculate global step index for additional steps
+      globalStepIndex = executedSteps.length > 0
+        ? Math.max(...executedSteps.map(s => s.index)) + 1
+        : 0;
+      screenshotCounter = Object.keys(screenshotMap).length + 1;
+
+      // Check if any page had a blocking error
+      blocked = parallelResults.some(r => r.status === "failed");
     }
-
-    // Merge results from parallel execution
-    const merged = mergeParallelResults(parallelResults);
-    const executedSteps = merged.executedSteps;
-    const snapshots = merged.snapshots;
-    const errors = merged.errors;
-    const screenshotMap = merged.screenshotMap;
-    const pageAudits = merged.audits;
-
-    // Calculate global step index for additional steps
-    let globalStepIndex = executedSteps.length > 0
-      ? Math.max(...executedSteps.map(s => s.index)) + 1
-      : 0;
-    let screenshotCounter = Object.keys(screenshotMap).length + 1;
-
-    // Check if any page had a blocking error
-    let blocked = parallelResults.some(r => r.status === "failed");
 
     emitPhaseComplete(onProgress, "traversal");
 

@@ -453,7 +453,7 @@ export function createExplorer(
  * Get a test value for filling form fields
  */
 function getTestValue(element: ActionCandidate["element"]): string {
-  const type = element.type.toLowerCase();
+  const type = (element.type || "").toLowerCase();
   const name = (element.text || "").toLowerCase();
 
   // Email fields
@@ -527,14 +527,3 @@ export function formatExplorationResult(result: ExplorationResult): string {
   return lines.join("\n");
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
-
-export type {
-  ExplorationConfig,
-  ExplorationStep,
-  ExplorationResult,
-  ExplorationCallbacks,
-  Explorer,
-};
