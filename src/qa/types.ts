@@ -1,4 +1,4 @@
-export type StepType = "open" | "snapshot" | "click" | "fill" | "press" | "getText" | "screenshot";
+export type StepType = "open" | "snapshot" | "click" | "fill" | "press" | "getText" | "screenshot" | "hover";
 
 export interface Step {
   type: StepType;
@@ -8,6 +8,39 @@ export interface Step {
   path?: string;
   note?: string;
 }
+
+// ============================================================================
+// Re-exports from new modules
+// ============================================================================
+
+export type {
+  StateFingerprint,
+  StateTransition,
+  StateHistory,
+  StateTracker,
+} from "./state.js";
+
+export type {
+  BudgetConfig,
+  BudgetStatus,
+  BudgetExhaustionReason,
+  BudgetEvent,
+  BudgetTracker,
+} from "./budget.js";
+
+export type {
+  CoverageMetrics,
+  CoverageSnapshot,
+  CoverageGain,
+  ActionOutcome,
+  CoverageTracker,
+  CoverageStats,
+  CoverageRecommendation,
+} from "./coverage.js";
+
+export { createStateTracker, captureStateFingerprint, fingerprintsEqual, fingerprintSimilarity } from "./state.js";
+export { createBudgetTracker, DEFAULT_BUDGET_CONFIG, estimateBudget, formatBudgetStatus, formatExhaustionReason } from "./budget.js";
+export { createCoverageTracker, collectPageCoverage, getCoverageRecommendations, formatCoverageStats } from "./coverage.js";
 
 export interface Plan {
   url: string;
@@ -57,6 +90,14 @@ export interface ExecutedStep {
   error?: string;
   screenshotPath?: string;
   timestamp: number;
+  /** State fingerprint before the action (if tracked) */
+  stateBeforeFingerprint?: string;
+  /** State fingerprint after the action (if tracked) */
+  stateAfterFingerprint?: string;
+  /** Coverage gain from this step (if tracked) */
+  coverageGain?: number;
+  /** Whether this step led to a new state */
+  isNewState?: boolean;
 }
 
 export interface SnapshotEntry {
@@ -123,7 +164,21 @@ export interface Evidence {
   errors: ErrorEntry[];
   screenshotMap: Record<string, number>;
   audits?: AuditEntry[];
+  /** Coverage statistics (if coverage tracking was enabled) */
+  coverageStats?: CoverageStats;
+  /** Budget status at end of run (if budget tracking was enabled) */
+  budgetStatus?: BudgetStatus;
+  /** Number of unique states visited */
+  uniqueStatesVisited?: number;
+  /** Exploration mode used */
+  explorationMode?: ExplorationMode;
 }
+
+// ============================================================================
+// Exploration Types
+// ============================================================================
+
+export type ExplorationMode = "coverage_guided" | "breadth_first" | "depth_first" | "random";
 
 export interface RunContext {
   url: string;

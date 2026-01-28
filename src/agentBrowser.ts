@@ -8,6 +8,71 @@ export interface AgentBrowserOptions {
   retryDelayMs?: number;
   debug?: boolean;
   headless?: boolean;
+  /** Time to wait for DOM stability before considering page stable (default: 300ms) */
+  stabilityWindowMs?: number;
+  /** Interval to check for DOM changes during stability wait (default: 100ms) */
+  stabilityCheckIntervalMs?: number;
+  /** Maximum time to wait for stability (default: 5000ms) */
+  maxStabilityWaitMs?: number;
+}
+
+// ============================================================================
+// Actionability Types
+// ============================================================================
+
+export type ActionabilityIssueType =
+  | "not_visible"
+  | "disabled"
+  | "aria_busy"
+  | "bbox_unstable"
+  | "covered"
+  | "outside_viewport"
+  | "detached";
+
+export interface ActionabilityIssue {
+  type: ActionabilityIssueType;
+  details: string;
+}
+
+export interface ActionabilityResult {
+  isActionable: boolean;
+  issues: ActionabilityIssue[];
+  confidence: number; // 0-1
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+// ============================================================================
+// Action Outcome Types
+// ============================================================================
+
+export type ActionOutcomeType =
+  | "url_changed"
+  | "network_request"
+  | "dom_changed"
+  | "dialog_opened"
+  | "console_error"
+  | "no_change"
+  | "element_not_hydrated";
+
+export interface ActionOutcome {
+  type: ActionOutcomeType;
+  details: string;
+  success: boolean;
+}
+
+// ============================================================================
+// Stability Types
+// ============================================================================
+
+export interface StabilityResult {
+  isStable: boolean;
+  waitedMs: number;
+  reason: "stable" | "timeout" | "error";
 }
 
 // Helper to sleep for a given duration
@@ -42,6 +107,7 @@ export interface AgentBrowser {
   click(refOrSelector: string): Promise<void>;
   fill(refOrSelector: string, text: string): Promise<void>;
   press(key: string): Promise<void>;
+  hover(refOrSelector: string): Promise<void>;
   getText(refOrSelector: string): Promise<string>;
   screenshot(path: string): Promise<void>;
   eval(script: string): Promise<string>;
@@ -49,6 +115,25 @@ export interface AgentBrowser {
   getLinks(): Promise<LinkInfo[]>;
   setViewportSize(width: number, height: number): Promise<void>;
   close(): Promise<void>;
+  /** Check if an element is actionable (visible, enabled, not covered) */
+  checkActionability(selector: string): Promise<ActionabilityResult>;
+  /** Wait for the page to be stable (no DOM mutations) */
+  waitForStability(options?: { maxWaitMs?: number; windowMs?: number }): Promise<StabilityResult>;
+  /** Detect the outcome of an action based on page changes */
+  detectActionOutcome(beforeSnapshot: PageSnapshot, afterSnapshot: PageSnapshot): ActionOutcome;
+  /** Get current page URL */
+  getCurrentUrl(): Promise<string>;
+  /** Take a page snapshot for comparison (URL, DOM hash, dialog count, etc.) */
+  takePageSnapshot(): Promise<PageSnapshot>;
+}
+
+export interface PageSnapshot {
+  url: string;
+  domHash: string;
+  elementCount: number;
+  textLength: number;
+  dialogCount: number;
+  timestamp: number;
 }
 
 const DEFAULT_TIMEOUT = 30000;
@@ -184,6 +269,161 @@ const SNAPSHOT_SCRIPT = `
   }
 
   return walkDOM(document.body, 0).join("\\n");
+})()
+`;
+
+// Script to check element actionability
+function buildActionabilityScript(selector: string): string {
+  return `
+(function() {
+  const sel = ${JSON.stringify(selector)};
+  const result = {
+    isActionable: false,
+    issues: [],
+    confidence: 0,
+    boundingBox: null
+  };
+  
+  try {
+    // Find the element
+    let el;
+    if (sel.startsWith('text=')) {
+      const text = sel.slice(5);
+      el = Array.from(document.querySelectorAll('*')).find(e => 
+        e.textContent && e.textContent.trim().includes(text) && 
+        ['A', 'BUTTON', 'INPUT', 'LABEL'].includes(e.tagName)
+      );
+    } else {
+      el = document.querySelector(sel);
+    }
+    
+    if (!el) {
+      result.issues.push({ type: 'detached', details: 'Element not found in DOM' });
+      return JSON.stringify(result);
+    }
+    
+    // Get bounding box
+    const rect = el.getBoundingClientRect();
+    result.boundingBox = {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height
+    };
+    
+    // Check visibility
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none') {
+      result.issues.push({ type: 'not_visible', details: 'Element has display: none' });
+    }
+    if (style.visibility === 'hidden') {
+      result.issues.push({ type: 'not_visible', details: 'Element has visibility: hidden' });
+    }
+    if (parseFloat(style.opacity) === 0) {
+      result.issues.push({ type: 'not_visible', details: 'Element has opacity: 0' });
+    }
+    if (rect.width === 0 || rect.height === 0) {
+      result.issues.push({ type: 'not_visible', details: 'Element has zero dimensions' });
+    }
+    
+    // Check if outside viewport
+    if (rect.bottom < 0 || rect.top > window.innerHeight ||
+        rect.right < 0 || rect.left > window.innerWidth) {
+      result.issues.push({ type: 'outside_viewport', details: 'Element is outside visible viewport' });
+    }
+    
+    // Check disabled state
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') {
+      result.issues.push({ type: 'disabled', details: 'Element is disabled' });
+    }
+    
+    // Check aria-busy
+    if (el.getAttribute('aria-busy') === 'true' || 
+        el.closest('[aria-busy="true"]')) {
+      result.issues.push({ type: 'aria_busy', details: 'Element or ancestor has aria-busy="true"' });
+    }
+    
+    // Check if covered by another element
+    if (rect.width > 0 && rect.height > 0) {
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const topEl = document.elementFromPoint(centerX, centerY);
+      if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
+        // Check if the covering element is interactive
+        const coveringStyle = window.getComputedStyle(topEl);
+        if (coveringStyle.pointerEvents !== 'none') {
+          result.issues.push({ 
+            type: 'covered', 
+            details: 'Element is covered by: ' + topEl.tagName.toLowerCase() + 
+                     (topEl.className ? '.' + topEl.className.split(' ')[0] : '')
+          });
+        }
+      }
+    }
+    
+    // Calculate confidence
+    result.isActionable = result.issues.length === 0;
+    result.confidence = result.isActionable ? 1 : Math.max(0, 1 - (result.issues.length * 0.25));
+    
+  } catch (e) {
+    result.issues.push({ type: 'detached', details: 'Error checking element: ' + e.message });
+  }
+  
+  return JSON.stringify(result);
+})()
+`;
+}
+
+// Script to get page snapshot for comparison
+const PAGE_SNAPSHOT_SCRIPT = `
+(function() {
+  function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return hash.toString(16);
+  }
+  
+  const body = document.body;
+  const elementCount = body.querySelectorAll('*').length;
+  const textLength = (body.textContent || '').length;
+  
+  // Count dialogs/modals
+  const dialogs = document.querySelectorAll(
+    'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+  );
+  const visibleDialogs = Array.from(dialogs).filter(d => {
+    const style = window.getComputedStyle(d);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  });
+  
+  // Create a simple DOM structure hash
+  const tags = Array.from(body.querySelectorAll('*')).slice(0, 500)
+    .map(el => el.tagName + (el.id ? '#' + el.id : '')).join(',');
+  const domHash = simpleHash(tags);
+  
+  return JSON.stringify({
+    url: window.location.href,
+    domHash: domHash,
+    elementCount: elementCount,
+    textLength: textLength,
+    dialogCount: visibleDialogs.length,
+    timestamp: Date.now()
+  });
+})()
+`;
+
+// Script for DOM stability detection
+const STABILITY_HASH_SCRIPT = `
+(function() {
+  const body = document.body;
+  const count = body ? body.querySelectorAll('*').length : 0;
+  const text = body ? (body.textContent || '').length : 0;
+  const dialogs = document.querySelectorAll('dialog[open], [role="dialog"], [aria-modal="true"]').length;
+  return count + '-' + text + '-' + dialogs;
 })()
 `;
 
@@ -347,6 +587,121 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
       if (options.debug) {
         console.log(`[playwright] Viewport set to: ${width}x${height}`);
       }
+    },
+
+    async hover(selector: string): Promise<void> {
+      const normalizedSelector = normalizeSelector(selector);
+      await withRetry(async () => {
+        const p = await ensurePage();
+        await p.hover(normalizedSelector, { timeout: actionTimeout });
+      }, options, 1);
+
+      if (options.debug) {
+        console.log(`[playwright] Hovered: ${selector}`);
+      }
+    },
+
+    async checkActionability(selector: string): Promise<ActionabilityResult> {
+      const normalizedSelector = normalizeSelector(selector);
+      const p = await ensurePage();
+      const script = buildActionabilityScript(normalizedSelector);
+      const resultJson = await p.evaluate(script);
+      return JSON.parse(resultJson as string) as ActionabilityResult;
+    },
+
+    async waitForStability(opts?: { maxWaitMs?: number; windowMs?: number }): Promise<StabilityResult> {
+      const maxWaitMs = opts?.maxWaitMs ?? options.maxStabilityWaitMs ?? 5000;
+      const windowMs = opts?.windowMs ?? options.stabilityWindowMs ?? 300;
+      const checkInterval = options.stabilityCheckIntervalMs ?? 100;
+
+      const p = await ensurePage();
+      const startTime = Date.now();
+      let lastHash = "";
+      let stableFor = 0;
+
+      while (Date.now() - startTime < maxWaitMs) {
+        try {
+          const currentHash = await p.evaluate(STABILITY_HASH_SCRIPT) as string;
+
+          if (currentHash === lastHash) {
+            stableFor += checkInterval;
+            if (stableFor >= windowMs) {
+              return {
+                isStable: true,
+                waitedMs: Date.now() - startTime,
+                reason: "stable",
+              };
+            }
+          } else {
+            stableFor = 0;
+            lastHash = currentHash;
+          }
+
+          await sleep(checkInterval);
+        } catch {
+          // If evaluation fails, the page might be navigating
+          stableFor = 0;
+          await sleep(checkInterval);
+        }
+      }
+
+      return {
+        isStable: false,
+        waitedMs: Date.now() - startTime,
+        reason: "timeout",
+      };
+    },
+
+    detectActionOutcome(beforeSnapshot: PageSnapshot, afterSnapshot: PageSnapshot): ActionOutcome {
+      // Check for URL change
+      if (beforeSnapshot.url !== afterSnapshot.url) {
+        return {
+          type: "url_changed",
+          details: `Navigated from ${beforeSnapshot.url} to ${afterSnapshot.url}`,
+          success: true,
+        };
+      }
+
+      // Check for dialog opened
+      if (afterSnapshot.dialogCount > beforeSnapshot.dialogCount) {
+        return {
+          type: "dialog_opened",
+          details: `Dialog count increased from ${beforeSnapshot.dialogCount} to ${afterSnapshot.dialogCount}`,
+          success: true,
+        };
+      }
+
+      // Check for significant DOM change
+      if (beforeSnapshot.domHash !== afterSnapshot.domHash) {
+        const elementDiff = Math.abs(afterSnapshot.elementCount - beforeSnapshot.elementCount);
+        const textDiff = Math.abs(afterSnapshot.textLength - beforeSnapshot.textLength);
+
+        if (elementDiff > 5 || textDiff > 100) {
+          return {
+            type: "dom_changed",
+            details: `DOM changed: ${elementDiff} elements, ${textDiff} text chars`,
+            success: true,
+          };
+        }
+      }
+
+      // No significant change detected
+      return {
+        type: "no_change",
+        details: "No observable changes after action",
+        success: false,
+      };
+    },
+
+    async getCurrentUrl(): Promise<string> {
+      const p = await ensurePage();
+      return p.url();
+    },
+
+    async takePageSnapshot(): Promise<PageSnapshot> {
+      const p = await ensurePage();
+      const resultJson = await p.evaluate(PAGE_SNAPSHOT_SCRIPT);
+      return JSON.parse(resultJson as string) as PageSnapshot;
     },
 
     async close(): Promise<void> {

@@ -1,5 +1,6 @@
 import type { AgentBrowser } from "../agentBrowser.js";
 import type { DomAuditResult, DomAuditSamples, DomAuditSummary, ViewportInfo } from "./types.js";
+import { runVisualAudit, type VisualAuditResult, type VisualAuditConfig } from "./visual.js";
 
 const GENERIC_LINK_TEXTS = [
   "learn more",
@@ -206,3 +207,121 @@ export async function trySetViewport(
     return { applied: false, actual };
   }
 }
+
+// ============================================================================
+// Full Audit (DOM + Visual)
+// ============================================================================
+
+export interface FullAuditResult {
+  domAudit: DomAuditResult;
+  visualAudit: VisualAuditResult;
+  combinedScore: number;
+  timestamp: number;
+}
+
+export interface FullAuditConfig {
+  /** Whether to run visual audits (default: true) */
+  visualAuditsEnabled: boolean;
+  /** Visual audit configuration */
+  visualConfig?: Partial<VisualAuditConfig>;
+}
+
+/**
+ * Run both DOM and visual audits on the current page
+ */
+export async function runFullAudit(
+  browser: AgentBrowser,
+  pageUrl: string,
+  label: string,
+  config: Partial<FullAuditConfig> = {}
+): Promise<FullAuditResult> {
+  const visualAuditsEnabled = config.visualAuditsEnabled ?? true;
+
+  // Run DOM audit
+  const domAudit = await runDomAudit(browser, pageUrl, label);
+
+  // Run visual audit if enabled
+  let visualAudit: VisualAuditResult;
+  if (visualAuditsEnabled) {
+    visualAudit = await runVisualAudit(browser, pageUrl, config.visualConfig);
+  } else {
+    // Return empty visual audit
+    visualAudit = {
+      pageUrl,
+      viewport: domAudit.viewport,
+      issues: [],
+      timestamp: Date.now(),
+      durationMs: 0,
+    };
+  }
+
+  // Calculate combined score (0-100, higher is better)
+  const combinedScore = calculateCombinedScore(domAudit, visualAudit);
+
+  return {
+    domAudit,
+    visualAudit,
+    combinedScore,
+    timestamp: Date.now(),
+  };
+}
+
+/**
+ * Calculate a combined accessibility/visual quality score
+ */
+function calculateCombinedScore(
+  domAudit: DomAuditResult,
+  visualAudit: VisualAuditResult
+): number {
+  let score = 100;
+
+  // DOM audit penalties
+  const { summary } = domAudit;
+
+  // Critical issues (larger penalties)
+  score -= summary.imagesMissingAlt * 3;
+  score -= summary.inputsMissingLabel * 4;
+  score -= summary.buttonsMissingLabel * 4;
+  score -= summary.htmlLangMissing ? 5 : 0;
+
+  // Moderate issues
+  score -= summary.linksGenericText * 2;
+  score -= summary.emptyHeadings * 3;
+  score -= summary.headingOrderIssues * 2;
+  score -= summary.smallTouchTargets * 2;
+
+  // H1 issues
+  if (summary.h1Count === 0) {
+    score -= 5;
+  } else if (summary.h1Count > 1) {
+    score -= 2;
+  }
+
+  // Horizontal overflow
+  if (summary.horizontalOverflowPx > 0) {
+    score -= Math.min(10, summary.horizontalOverflowPx / 10);
+  }
+
+  // Visual audit penalties
+  for (const issue of visualAudit.issues) {
+    switch (issue.severity) {
+      case "high":
+        score -= 5;
+        break;
+      case "medium":
+        score -= 3;
+        break;
+      case "low":
+        score -= 1;
+        break;
+    }
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+// ============================================================================
+// Re-exports
+// ============================================================================
+
+export { runVisualAudit, type VisualAuditResult, type VisualAuditConfig } from "./visual.js";

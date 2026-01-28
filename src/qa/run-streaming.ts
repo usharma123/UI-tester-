@@ -6,13 +6,20 @@ import type { ProgressCallback, SSEEvent, QAPhase, PageStatus } from "./progress
 import { createAgentBrowser, type AgentBrowser } from "../agentBrowser.js";
 import { createPlan, createPagePlan } from "./planner.js";
 import { evaluateEvidence } from "./judge.js";
-import { getViewportInfo, runDomAudit, trySetViewport } from "./audits.js";
+import { getViewportInfo, runDomAudit, trySetViewport, runFullAudit } from "./audits.js";
 import { ensureDir } from "../utils/fs.js";
 import { getTimestamp } from "../utils/time.js";
 import { fetchSitemap, crawlSitemap, formatSitemapForPlanner, type SitemapResult } from "../utils/sitemap.js";
 import { createBrowserPool } from "../utils/browserPool.js";
 import { testPagesInParallel, mergeParallelResults, type ParallelTestCallbacks } from "./parallelTester.js";
 import * as localStorage from "../storage/local.js";
+
+// Coverage-guided exploration imports
+import { createStateTracker, captureStateFingerprint } from "./state.js";
+import { createBudgetTracker } from "./budget.js";
+import { createCoverageTracker, collectPageCoverage, getCoverageRecommendations } from "./coverage.js";
+import { createExplorer, type ExplorationResult } from "./explorer.js";
+import { createAuthManager } from "./auth.js";
 
 export interface StreamingRunOptions {
   config: Config;
@@ -838,4 +845,151 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       // Ignore cleanup errors
     }
   }
+}
+
+// ============================================================================
+// Coverage-Guided Exploration (Experimental)
+// ============================================================================
+
+export interface CoverageGuidedOptions extends StreamingRunOptions {
+  /** Use the coverage-guided exploration engine */
+  useCoverageGuided: true;
+}
+
+/**
+ * Run QA with coverage-guided exploration engine
+ * This is an alternative to the traditional plan-based approach
+ */
+export async function runCoverageGuidedQA(
+  options: CoverageGuidedOptions
+): Promise<{ explorationResult: ExplorationResult; coverageStats: ReturnType<typeof import("./coverage.js").createCoverageTracker>["getStats"] }> {
+  const { config, url, onProgress } = options;
+  const timestamp = getTimestamp();
+
+  emit(onProgress, { type: "log", message: "Starting coverage-guided exploration...", level: "info" });
+
+  // Create trackers
+  const stateTracker = createStateTracker();
+  const budgetTracker = createBudgetTracker(config.budgetConfig);
+  const coverageTracker = createCoverageTracker();
+
+  // Create browser
+  const browser = createAgentBrowser({
+    timeout: config.browserTimeout,
+    navigationTimeout: config.navigationTimeout,
+    actionTimeout: config.actionTimeout,
+    maxRetries: config.maxRetries,
+    retryDelayMs: config.retryDelayMs,
+    debug: process.env.DEBUG === "true",
+  });
+
+  try {
+    // Open initial URL
+    await browser.open(url);
+
+    // Create explorer
+    const explorer = createExplorer(browser, coverageTracker, stateTracker, budgetTracker, {
+      strategy: config.explorationMode,
+      beamWidth: config.beamWidth,
+    });
+
+    // Run exploration
+    const explorationResult = await explorer.explore({
+      onStart: () => {
+        emit(onProgress, { type: "log", message: "Exploration started", level: "info" });
+      },
+      onBeforeAction: (action, stepIndex) => {
+        emit(onProgress, {
+          type: "log",
+          message: `Step ${stepIndex + 1}: ${action.actionType} on "${action.element.text.slice(0, 30)}"`,
+          level: "info",
+        });
+      },
+      onAfterAction: (step) => {
+        const gain = step.coverageGain.hasGain ? ` (+${step.coverageGain.totalGain} coverage)` : "";
+        emit(onProgress, {
+          type: "log",
+          message: `Step ${step.index + 1} ${step.success ? "succeeded" : "failed"}${gain}`,
+          level: step.success ? "info" : "warn",
+        });
+      },
+      onComplete: (result) => {
+        emit(onProgress, {
+          type: "log",
+          message: `Exploration complete: ${result.terminationReason}`,
+          level: "info",
+        });
+      },
+      onError: (error, stepIndex) => {
+        emit(onProgress, {
+          type: "log",
+          message: `Error at step ${stepIndex}: ${error.message}`,
+          level: "error",
+        });
+      },
+      onLog: (message, level) => {
+        emit(onProgress, { type: "log", message, level });
+      },
+    });
+
+    // Get coverage stats
+    const coverageStats = coverageTracker.getStats();
+
+    emit(onProgress, {
+      type: "log",
+      message: `Coverage score: ${coverageStats.coverageScore.toFixed(0)}/100`,
+      level: "info",
+    });
+    emit(onProgress, {
+      type: "log",
+      message: `Unique states: ${explorationResult.uniqueStates}`,
+      level: "info",
+    });
+    emit(onProgress, {
+      type: "log",
+      message: `Steps taken: ${explorationResult.steps.length}`,
+      level: "info",
+    });
+
+    return {
+      explorationResult,
+      coverageStats: () => coverageStats,
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+// ============================================================================
+// Auth Fixture Helpers
+// ============================================================================
+
+/**
+ * Save the current browser auth state as a fixture
+ */
+export async function saveAuthFixture(
+  browser: AgentBrowser,
+  name: string,
+  fixturesDir?: string
+): Promise<ReturnType<typeof createAuthManager>["loadFixture"]> {
+  const authManager = createAuthManager(fixturesDir);
+  const fixture = await authManager.saveFixture(browser, name);
+  return async () => fixture;
+}
+
+/**
+ * Apply an auth fixture to the browser
+ */
+export async function applyAuthFixture(
+  browser: AgentBrowser,
+  fixtureIdOrName: string,
+  fixturesDir?: string
+): Promise<boolean> {
+  const authManager = createAuthManager(fixturesDir);
+  const fixture = await authManager.loadFixture(fixtureIdOrName);
+  if (!fixture) {
+    return false;
+  }
+  await authManager.applyFixture(browser, fixture);
+  return true;
 }

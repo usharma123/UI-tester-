@@ -212,3 +212,155 @@ DO:
 
 Remember: Output ONLY valid JSON, no other text.`;
 }
+
+// ============================================================================
+// Coverage-Aware Planner Prompt
+// ============================================================================
+
+export interface CoverageContext {
+  /** URLs that have been visited */
+  visitedUrls: string[];
+  /** Forms that have been tested */
+  testedForms: string[];
+  /** Dialogs/modals that have been opened */
+  openedDialogs: string[];
+  /** Elements that have been interacted with */
+  interactedElements: string[];
+  /** Coverage score (0-100) */
+  coverageScore: number;
+  /** Recommendations for improving coverage */
+  recommendations: Array<{ type: string; priority: number; message: string }>;
+}
+
+/**
+ * Build a coverage-aware planner prompt that includes coverage context
+ * This helps the LLM focus on untested areas and avoid revisiting already-covered functionality
+ */
+export function buildCoverageAwarePlannerPrompt(
+  url: string,
+  goals: string,
+  snapshot: string,
+  coverageContext: CoverageContext,
+  sitemapContext?: string
+): string {
+  const sitemapSection = sitemapContext
+    ? `## Discovered Site Pages (VERIFIED URLS)
+${sitemapContext}
+
+CRITICAL: You MUST ONLY use URLs from this list for "open" steps.
+
+`
+    : "";
+
+  const visitedUrlsList = coverageContext.visitedUrls.length > 0
+    ? coverageContext.visitedUrls.map(u => `- ${u}`).join("\n")
+    : "None yet";
+
+  const testedFormsList = coverageContext.testedForms.length > 0
+    ? coverageContext.testedForms.map(f => `- ${f}`).join("\n")
+    : "None yet";
+
+  const dialogsList = coverageContext.openedDialogs.length > 0
+    ? coverageContext.openedDialogs.map(d => `- ${d}`).join("\n")
+    : "None yet";
+
+  const recommendationsList = coverageContext.recommendations
+    .slice(0, 3)
+    .map(r => `- [Priority ${r.priority}] ${r.message}`)
+    .join("\n") || "No specific recommendations";
+
+  // Calculate untested URLs from sitemap
+  const sitemapUrls = sitemapContext
+    ? sitemapContext.split("\n").filter(line => line.trim().startsWith("http")).map(line => line.trim())
+    : [];
+  const untestedUrls = sitemapUrls.filter(u => !coverageContext.visitedUrls.includes(u));
+  const untestedUrlsList = untestedUrls.length > 0
+    ? untestedUrls.slice(0, 10).map(u => `- ${u}`).join("\n")
+    : "All discovered URLs have been visited";
+
+  return `## Target URL
+${url}
+
+${sitemapSection}## Testing Goals
+${goals}
+
+## Current Coverage Status
+**Coverage Score**: ${coverageContext.coverageScore.toFixed(0)}/100
+
+### Already Visited URLs (DO NOT REVISIT)
+${visitedUrlsList}
+
+### Already Tested Forms (FOCUS ON OTHERS)
+${testedFormsList}
+
+### Already Opened Dialogs/Modals
+${dialogsList}
+
+### Untested URLs (PRIORITIZE THESE)
+${untestedUrlsList}
+
+### Coverage Recommendations
+${recommendationsList}
+
+## Current DOM Snapshot
+${snapshot}
+
+## Task
+Create a test plan (max 15 steps) that MAXIMIZES coverage by:
+1. Visiting UNTESTED URLs from the list above
+2. Testing forms that haven't been tested yet
+3. Looking for and opening dialogs/modals that haven't been triggered
+4. Following the coverage recommendations
+
+AVOID:
+- Revisiting URLs you've already tested
+- Re-testing forms that have already been validated
+- Clicking elements you've already interacted with
+
+PRIORITIZE:
+- Navigation to untested pages
+- Forms on untested pages
+- Modal triggers (buttons that might open dialogs)
+- Accordions and expandable sections
+
+Remember: Output ONLY valid JSON, no other text.`;
+}
+
+/**
+ * Build an exploration-focused prompt for coverage-guided testing
+ * This is used when the explorer needs LLM guidance for next actions
+ */
+export function buildExplorationPrompt(
+  currentUrl: string,
+  snapshot: string,
+  coverageContext: CoverageContext,
+  candidateActions: Array<{ selector: string; text: string; type: string; score: number }>
+): string {
+  const topCandidates = candidateActions
+    .slice(0, 10)
+    .map((c, i) => `${i + 1}. [${c.type}] "${c.text}" (selector: ${c.selector}, score: ${c.score.toFixed(1)})`)
+    .join("\n");
+
+  return `## Current State
+URL: ${currentUrl}
+Coverage Score: ${coverageContext.coverageScore.toFixed(0)}/100
+Visited URLs: ${coverageContext.visitedUrls.length}
+Tested Forms: ${coverageContext.testedForms.length}
+
+## Top Action Candidates (ranked by coverage potential)
+${topCandidates}
+
+## Current DOM Snapshot
+${snapshot}
+
+## Task
+Select the BEST 3 actions to maximize coverage. Consider:
+1. Actions that lead to new URLs
+2. Actions that trigger forms or modals
+3. Actions on elements not yet interacted with
+
+Output JSON array of indices (1-based) in order of priority:
+{"actions": [1, 5, 3]}
+
+Remember: Output ONLY valid JSON.`;
+}

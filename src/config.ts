@@ -17,7 +17,61 @@ export interface Config {
   strictMode: boolean;
   captureBeforeAfterScreenshots: boolean;
   viewports: ViewportConfig[];
+  
+  // ============================================================================
+  // Coverage-Guided Exploration Config
+  // ============================================================================
+  
+  /** Budget configuration for exploration limits */
+  budgetConfig: BudgetConfig;
+  /** Exploration mode: coverage_guided, breadth_first, depth_first, random */
+  explorationMode: ExplorationMode;
+  /** Beam width for beam search exploration (default: 3) */
+  beamWidth: number;
+  /** Whether to enable coverage-guided exploration (vs traditional planning) */
+  coverageGuidedEnabled: boolean;
+  
+  // ============================================================================
+  // Visual Audit Config
+  // ============================================================================
+  
+  /** Whether to run visual heuristic audits */
+  visualAuditsEnabled: boolean;
+  /** Directory to store baseline screenshots */
+  baselineDir: string;
+  /** Diff threshold for visual regression (0-100, default: 5) */
+  diffThreshold: number;
+  
+  // ============================================================================
+  // Auth Fixture Config
+  // ============================================================================
+  
+  /** Directory to store auth fixtures */
+  authFixtureDir: string;
+  /** Auth fixture to use for this run (ID or name) */
+  authFixture?: string;
 }
+
+// ============================================================================
+// Budget Config Type
+// ============================================================================
+
+export interface BudgetConfig {
+  /** Maximum steps allowed per unique page state (default: 10) */
+  maxStepsPerPageState: number;
+  /** Maximum unique states to visit (default: 100) */
+  maxUniqueStates: number;
+  /** Maximum total steps across all states (default: 500) */
+  maxTotalSteps: number;
+  /** Number of steps without coverage gain before stopping (default: 15) */
+  stagnationThreshold: number;
+  /** Maximum depth in the exploration tree (default: 10) */
+  maxDepth: number;
+  /** Time limit in milliseconds (default: 600000 = 10 minutes) */
+  maxTimeMs: number;
+}
+
+export type ExplorationMode = "coverage_guided" | "breadth_first" | "depth_first" | "random";
 
 export interface CLIOptions {
   goals?: string;
@@ -30,6 +84,15 @@ export interface ViewportConfig {
   width: number;
   height: number;
 }
+
+const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
+  maxStepsPerPageState: 10,
+  maxUniqueStates: 100,
+  maxTotalSteps: 500,
+  stagnationThreshold: 15,
+  maxDepth: 10,
+  maxTimeMs: 600000, // 10 minutes
+};
 
 const DEFAULT_CONFIG = {
   openRouterModel: "anthropic/claude-sonnet-4.5",
@@ -53,6 +116,17 @@ const DEFAULT_CONFIG = {
     { label: "tablet", width: 820, height: 1180 },
     { label: "mobile", width: 390, height: 844 },
   ],
+  // Coverage-guided exploration defaults
+  budgetConfig: DEFAULT_BUDGET_CONFIG,
+  explorationMode: "coverage_guided" as ExplorationMode,
+  beamWidth: 3,
+  coverageGuidedEnabled: false, // Disabled by default, enable with --coverage-guided
+  // Visual audit defaults
+  visualAuditsEnabled: true,
+  baselineDir: ".ui-qa/baselines",
+  diffThreshold: 5,
+  // Auth fixture defaults
+  authFixtureDir: ".ui-qa/auth-fixtures",
 };
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -79,6 +153,24 @@ function parseViewports(value: string | undefined, defaults: ViewportConfig[]): 
     .filter((entry): entry is ViewportConfig => Boolean(entry));
 
   return parsed.length > 0 ? parsed : defaults;
+}
+
+function parseExplorationMode(value: string | undefined, defaultValue: ExplorationMode): ExplorationMode {
+  if (!value) return defaultValue;
+  const valid: ExplorationMode[] = ["coverage_guided", "breadth_first", "depth_first", "random"];
+  const normalized = value.toLowerCase().replace(/-/g, "_") as ExplorationMode;
+  return valid.includes(normalized) ? normalized : defaultValue;
+}
+
+function parseBudgetConfig(env: NodeJS.ProcessEnv): BudgetConfig {
+  return {
+    maxStepsPerPageState: parseInt(env.BUDGET_MAX_STEPS_PER_STATE ?? String(DEFAULT_BUDGET_CONFIG.maxStepsPerPageState), 10),
+    maxUniqueStates: parseInt(env.BUDGET_MAX_UNIQUE_STATES ?? String(DEFAULT_BUDGET_CONFIG.maxUniqueStates), 10),
+    maxTotalSteps: parseInt(env.BUDGET_MAX_TOTAL_STEPS ?? String(DEFAULT_BUDGET_CONFIG.maxTotalSteps), 10),
+    stagnationThreshold: parseInt(env.BUDGET_STAGNATION_THRESHOLD ?? String(DEFAULT_BUDGET_CONFIG.stagnationThreshold), 10),
+    maxDepth: parseInt(env.BUDGET_MAX_DEPTH ?? String(DEFAULT_BUDGET_CONFIG.maxDepth), 10),
+    maxTimeMs: parseInt(env.BUDGET_MAX_TIME_MS ?? String(DEFAULT_BUDGET_CONFIG.maxTimeMs), 10),
+  };
 }
 
 export function loadConfig(cliOptions: CLIOptions = {}): Config {
@@ -110,5 +202,20 @@ export function loadConfig(cliOptions: CLIOptions = {}): Config {
     strictMode: parseBoolean(process.env.STRICT_MODE, DEFAULT_CONFIG.strictMode),
     captureBeforeAfterScreenshots: parseBoolean(process.env.CAPTURE_BEFORE_AFTER, DEFAULT_CONFIG.captureBeforeAfterScreenshots),
     viewports: parseViewports(process.env.VIEWPORTS, DEFAULT_CONFIG.viewports),
+    
+    // Coverage-guided exploration config
+    budgetConfig: parseBudgetConfig(process.env),
+    explorationMode: parseExplorationMode(process.env.EXPLORATION_MODE, DEFAULT_CONFIG.explorationMode),
+    beamWidth: parseInt(process.env.BEAM_WIDTH ?? String(DEFAULT_CONFIG.beamWidth), 10),
+    coverageGuidedEnabled: parseBoolean(process.env.COVERAGE_GUIDED, DEFAULT_CONFIG.coverageGuidedEnabled),
+    
+    // Visual audit config
+    visualAuditsEnabled: parseBoolean(process.env.VISUAL_AUDITS, DEFAULT_CONFIG.visualAuditsEnabled),
+    baselineDir: process.env.BASELINE_DIR ?? DEFAULT_CONFIG.baselineDir,
+    diffThreshold: parseInt(process.env.DIFF_THRESHOLD ?? String(DEFAULT_CONFIG.diffThreshold), 10),
+    
+    // Auth fixture config
+    authFixtureDir: process.env.AUTH_FIXTURE_DIR ?? DEFAULT_CONFIG.authFixtureDir,
+    authFixture: process.env.AUTH_FIXTURE,
   };
 }
