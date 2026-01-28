@@ -20,7 +20,7 @@
     "dev": "bun run --watch src/cli-ink.tsx",
     "build": "bun build src/cli-ink.tsx --outdir dist --target node --packages external && chmod +x dist/cli-ink.js",
     "prepublishOnly": "bun run build",
-    "test": "tsx --test",
+    "test": "tsx --test tests/*.test.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
@@ -38,7 +38,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^25.0.10",
+    "@types/node": "^25.1.0",
     "@types/react": "^19.2.10",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

@@ -41,6 +41,12 @@ export interface ActionCandidate {
     href?: string;
     type?: string;
     formId?: string;
+    /** Whether the element is disabled */
+    isDisabled?: boolean;
+    /** For buttons: whether there's an associated empty input that needs filling first */
+    hasEmptyRequiredInput?: boolean;
+    /** For inputs: whether this input is associated with a disabled submit button */
+    enablesSubmitButton?: boolean;
   };
   /** Whether this action has been attempted before */
   wasAttempted: boolean;
@@ -76,6 +82,8 @@ export interface ScoringContext {
   actionTypeCounts: Map<string, number>;
   /** Current page URL */
   currentUrl: string;
+  /** Base domain to restrict exploration (e.g., "lancedb.com") */
+  baseDomain?: string;
 }
 
 export interface ActionSelector {
@@ -152,6 +160,25 @@ const FORM_KEYWORDS = [
 ];
 
 /**
+ * Check if a URL is on the same domain as the base domain
+ */
+function isSameDomain(url: string, baseDomain: string | undefined, currentUrl: string): boolean {
+  if (!baseDomain) return true; // No restriction if no base domain set
+
+  try {
+    const targetUrl = new URL(url, currentUrl);
+    const targetHostname = targetUrl.hostname.toLowerCase();
+    const baseDomainLower = baseDomain.toLowerCase();
+
+    // Check if target hostname matches or is a subdomain of base domain
+    return targetHostname === baseDomainLower ||
+           targetHostname.endsWith('.' + baseDomainLower);
+  } catch {
+    return false; // Invalid URL, treat as external
+  }
+}
+
+/**
  * Calculate novelty score based on action potential to discover new states
  */
 function calculateNoveltyScore(
@@ -166,6 +193,12 @@ function calculateNoveltyScore(
   if (element.href) {
     try {
       const targetUrl = new URL(element.href, context.currentUrl).href;
+
+      // Skip external domains - they should not be explored
+      if (!isSameDomain(element.href, context.baseDomain, context.currentUrl)) {
+        return 0; // External link gets zero novelty score
+      }
+
       if (!context.visitedUrls.has(targetUrl)) {
         score += 8; // High score for potentially new URL
       } else {
@@ -301,7 +334,7 @@ function calculateBranchFactor(candidate: ActionCandidate): number {
 const EXTRACT_CANDIDATES_SCRIPT = `
 (function() {
   const candidates = [];
-  
+
   // Find all interactive elements
   const interactiveSelectors = [
     'a[href]',
@@ -319,40 +352,40 @@ const EXTRACT_CANDIDATES_SCRIPT = `
     '[class*="btn"]',
     '[class*="button"]',
   ];
-  
+
   const elements = document.querySelectorAll(interactiveSelectors.join(', '));
-  
+
   function isVisible(el) {
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
     const rect = el.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   }
-  
+
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
-    if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
-    
+    if (el.id) return '#' + CSS.escape(el.id);
+    if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name.replace(/"/g, '\\\\"') + '"]';
+
     // Build a selector path
     const parts = [];
     let current = el;
     for (let i = 0; current && i < 3; i++) {
       let part = current.tagName.toLowerCase();
       if (current.id) {
-        part = '#' + current.id;
+        part = '#' + CSS.escape(current.id);
         parts.unshift(part);
         break;
       }
       const classes = Array.from(current.classList || [])
         .filter(c => c && !c.includes('active') && !c.includes('hover') && !c.includes('focus'))
         .slice(0, 2);
-      if (classes.length) part += '.' + classes.join('.');
+      if (classes.length) part += '.' + classes.map(c => CSS.escape(c)).join('.');
       parts.unshift(part);
       current = current.parentElement;
     }
     return parts.join(' > ');
   }
-  
+
   function getActionType(el) {
     const tag = el.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea') {
@@ -362,18 +395,87 @@ const EXTRACT_CANDIDATES_SCRIPT = `
     if (tag === 'select') return 'select';
     return 'click';
   }
-  
+
+  // Check if element is disabled
+  function isDisabled(el) {
+    return el.disabled ||
+           el.hasAttribute('disabled') ||
+           el.getAttribute('aria-disabled') === 'true';
+  }
+
+  // Find nearby input elements that might be associated with a button
+  function findAssociatedInputs(el) {
+    // Check if button is inside a form
+    const form = el.closest('form');
+    if (form) {
+      const inputs = form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea');
+      return Array.from(inputs).filter(input => isVisible(input));
+    }
+
+    // Check for inputs in the same container (common for search boxes)
+    const container = el.closest('div, section, nav, header');
+    if (container) {
+      const inputs = container.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea');
+      return Array.from(inputs).filter(input => isVisible(input));
+    }
+
+    return [];
+  }
+
+  // Check if any associated input is empty
+  function hasEmptyInput(inputs) {
+    return inputs.some(input => !input.value || input.value.trim() === '');
+  }
+
+  // Find disabled submit buttons associated with an input
+  function findDisabledSubmitButton(el) {
+    const form = el.closest('form');
+    if (form) {
+      const buttons = form.querySelectorAll('button[type="submit"], button:not([type]), input[type="submit"]');
+      return Array.from(buttons).find(btn => isDisabled(btn) && isVisible(btn));
+    }
+
+    // Check same container for search-style inputs
+    const container = el.closest('div, section, nav, header');
+    if (container) {
+      const buttons = container.querySelectorAll('button, [role="button"]');
+      return Array.from(buttons).find(btn => isDisabled(btn) && isVisible(btn));
+    }
+
+    return null;
+  }
+
   for (const el of elements) {
     if (!isVisible(el)) continue;
-    
+
     const tag = el.tagName.toLowerCase();
     const text = (el.textContent || '').trim().slice(0, 100);
     const ariaLabel = el.getAttribute('aria-label') || '';
     const placeholder = el.getAttribute('placeholder') || '';
-    
+    const actionType = getActionType(el);
+
+    // Detect disabled state
+    const disabled = isDisabled(el);
+
+    // For buttons/submit: check if there's an empty input that needs filling
+    let hasEmptyRequiredInput = false;
+    if (disabled && (tag === 'button' || el.type === 'submit')) {
+      const inputs = findAssociatedInputs(el);
+      hasEmptyRequiredInput = hasEmptyInput(inputs);
+    }
+
+    // For inputs: check if filling this would enable a submit button
+    let enablesSubmitButton = false;
+    if (actionType === 'fill') {
+      const disabledButton = findDisabledSubmitButton(el);
+      if (disabledButton && (!el.value || el.value.trim() === '')) {
+        enablesSubmitButton = true;
+      }
+    }
+
     candidates.push({
       selector: getSelector(el),
-      actionType: getActionType(el),
+      actionType: actionType,
       element: {
         tagName: tag,
         text: text || ariaLabel || placeholder,
@@ -381,10 +483,13 @@ const EXTRACT_CANDIDATES_SCRIPT = `
         href: el.href || '',
         type: el.type || '',
         formId: el.form ? (el.form.id || el.form.name || 'form') : '',
+        isDisabled: disabled,
+        hasEmptyRequiredInput: hasEmptyRequiredInput,
+        enablesSubmitButton: enablesSubmitButton,
       }
     });
   }
-  
+
   // Deduplicate by selector
   const seen = new Set();
   const unique = candidates.filter(c => {
@@ -392,7 +497,7 @@ const EXTRACT_CANDIDATES_SCRIPT = `
     seen.add(c.selector);
     return true;
   });
-  
+
   return JSON.stringify(unique.slice(0, 100)); // Limit to 100 candidates
 })()
 `;
@@ -428,11 +533,26 @@ export function createActionSelector(
       const branchFactor = calculateBranchFactor(candidate);
 
       // Calculate weighted score
-      const baseScore =
+      let baseScore =
         novelty * fullConfig.noveltyWeight +
         businessCriticality * fullConfig.businessCriticalityWeight +
         risk * fullConfig.riskWeight +
         branchFactor * fullConfig.branchFactorWeight;
+
+      // === DISABLED ELEMENT HANDLING ===
+      // If element is disabled, apply heavy penalty or skip entirely
+      if (candidate.element.isDisabled) {
+        // Disabled elements can't be interacted with - set score to near zero
+        // We keep a tiny score so they show up in logs but never get selected
+        baseScore = 0.01;
+      }
+
+      // === INPUT PRIORITIZATION ===
+      // Boost inputs that would enable a disabled submit button
+      // This ensures we fill the search box BEFORE trying to click the disabled search button
+      if (candidate.element.enablesSubmitButton) {
+        baseScore += 5; // Significant boost to prioritize filling inputs first
+      }
 
       // Apply decay for repeated attempts
       const attemptKey = getAttemptKey(candidate.selector, candidate.actionType);
@@ -445,7 +565,12 @@ export function createActionSelector(
       const typeCount = context.actionTypeCounts.get(candidate.actionType) || 0;
       const typeDecay = typeCount > 10 ? 0.9 : 1.0;
 
-      const priorityScore = baseScore * decayFactor * typeDecay * 10; // Scale to 0-40
+      let priorityScore = baseScore * decayFactor * typeDecay * 10; // Scale to 0-40
+
+      // Final check: ensure disabled elements stay at bottom regardless of other factors
+      if (candidate.element.isDisabled) {
+        priorityScore = Math.min(priorityScore, 0.1);
+      }
 
       return {
         ...candidate,
@@ -476,8 +601,15 @@ export function createActionSelector(
     ): ActionCandidate[] {
       const ranked = this.rankActions(candidates, context);
 
-      // Filter out actions that have exceeded max retries
+      // Filter out:
+      // 1. Disabled elements (can't be interacted with)
+      // 2. Actions that have exceeded max retries
       const filtered = ranked.filter(c => {
+        // Skip disabled elements - they will timeout/fail
+        if (c.element.isDisabled) {
+          return false;
+        }
+
         const attemptKey = getAttemptKey(c.selector, c.actionType);
         const attempts = attemptCounts.get(attemptKey) || 0;
         return attempts < fullConfig.maxRetries;
@@ -541,7 +673,8 @@ export async function extractActionCandidates(
 export function buildScoringContext(
   coverage: CoverageTracker,
   state: StateTracker,
-  currentUrl: string
+  currentUrl: string,
+  baseDomain?: string
 ): ScoringContext {
   const metrics = coverage.getMetrics();
 
@@ -559,6 +692,7 @@ export function buildScoringContext(
     interactedElements: metrics.interactedElements,
     actionTypeCounts,
     currentUrl,
+    baseDomain,
   };
 }
 

@@ -127,6 +127,18 @@ export const DEFAULT_EXPLORATION_CONFIG: ExplorationConfig = {
 // ============================================================================
 
 /**
+ * Extract the domain from a URL
+ */
+function extractDomain(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Create a coverage-guided explorer
  */
 export function createExplorer(
@@ -146,6 +158,12 @@ export function createExplorer(
   let stepIndex = 0;
   let stopped = false;
   let stopReason: string | undefined;
+
+  // Base domain to restrict exploration (set on first URL)
+  let baseDomain: string | undefined;
+
+  // Current URL (updated as we navigate)
+  let currentUrl: string = "";
 
   // Backtracking stack for depth-first exploration
   const backtrackStack: Array<{
@@ -174,8 +192,12 @@ export function createExplorer(
 
       try {
         // Initial coverage collection
-        const currentUrl = await browser.getCurrentUrl();
+        currentUrl = await browser.getCurrentUrl();
         await collectPageCoverage(browser, coverage, currentUrl);
+
+        // Set base domain from starting URL to prevent external navigation
+        baseDomain = extractDomain(currentUrl);
+        log(callbacks, `Base domain set to: ${baseDomain}`);
 
         // Capture initial state
         const initialState = await captureStateFingerprint(browser, currentUrl);
@@ -199,6 +221,7 @@ export function createExplorer(
               const backtrackPoint = backtrackStack.pop()!;
               log(callbacks, `Backtracking to ${backtrackPoint.url}`);
               await browser.open(backtrackPoint.url);
+              currentUrl = backtrackPoint.url;
               currentDepth = Math.max(0, currentDepth - 1);
               continue;
             }
@@ -225,6 +248,22 @@ export function createExplorer(
 
             callbacks?.onAfterAction?.(step);
 
+            // Update current URL after action
+            currentUrl = await browser.getCurrentUrl();
+
+            // Check if we've navigated to an external domain
+            const currentDomain = extractDomain(currentUrl);
+            if (baseDomain && currentDomain && currentDomain !== baseDomain && !currentDomain.endsWith('.' + baseDomain)) {
+              log(callbacks, `Navigated to external domain ${currentDomain}, backtracking`, "warn");
+              if (fullConfig.enableBacktracking && backtrackStack.length > 0) {
+                const backtrackPoint = backtrackStack.pop()!;
+                await browser.open(backtrackPoint.url);
+                currentUrl = backtrackPoint.url;
+                currentDepth = Math.max(0, currentDepth - 1);
+                continue;
+              }
+            }
+
             // Update budget with coverage gain
             budget.recordStep(step.coverageGain.hasGain);
 
@@ -235,7 +274,7 @@ export function createExplorer(
               // Save backtrack point if we have remaining actions
               if (fullConfig.enableBacktracking && nextActions.length > 1) {
                 backtrackStack.push({
-                  url: await browser.getCurrentUrl(),
+                  url: currentUrl,
                   stateFingerprint: step.stateBefore,
                   remainingActions: nextActions.slice(1),
                 });
@@ -248,6 +287,7 @@ export function createExplorer(
                 const backtrackPoint = backtrackStack.pop()!;
                 log(callbacks, `Max depth reached, backtracking to ${backtrackPoint.url}`);
                 await browser.open(backtrackPoint.url);
+                currentUrl = backtrackPoint.url;
                 currentDepth = Math.max(0, currentDepth - 1);
               } else {
                 log(callbacks, "Max depth reached");
@@ -290,8 +330,7 @@ export function createExplorer(
     },
 
     selectNextActions(candidates: ActionCandidate[], n?: number): ActionCandidate[] {
-      const url = ""; // Will be filled by async call in explore()
-      const context = buildScoringContext(coverage, state, url);
+      const context = buildScoringContext(coverage, state, currentUrl, baseDomain);
       const beamWidth = n ?? fullConfig.beamWidth;
 
       switch (fullConfig.strategy) {
@@ -441,6 +480,8 @@ export function createExplorer(
       stopped = false;
       stopReason = undefined;
       backtrackStack.length = 0;
+      baseDomain = undefined;
+      currentUrl = "";
     },
   };
 }

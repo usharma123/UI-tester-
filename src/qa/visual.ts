@@ -149,15 +149,15 @@ const OVERLAPPING_CLICKABLES_SCRIPT = `
   }
   
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     let selector = el.tagName.toLowerCase();
     if (el.className) {
       const classes = el.className.toString().split(' ').filter(c => c).slice(0, 2);
-      if (classes.length) selector += '.' + classes.join('.');
+      if (classes.length) selector += '.' + classes.map(c => CSS.escape(c)).join('.');
     }
     return selector;
   }
-  
+
   return JSON.stringify(issues.slice(0, 10)); // Limit to 10 issues
 })()
 `;
@@ -200,15 +200,15 @@ const CLIPPED_TEXT_SCRIPT = `
   }
   
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     let selector = el.tagName.toLowerCase();
     if (el.className) {
       const classes = el.className.toString().split(' ').filter(c => c).slice(0, 2);
-      if (classes.length) selector += '.' + classes.join('.');
+      if (classes.length) selector += '.' + classes.map(c => CSS.escape(c)).join('.');
     }
     return selector;
   }
-  
+
   return JSON.stringify(issues.slice(0, 10));
 })()
 `;
@@ -252,15 +252,15 @@ function buildSmallTapTargetsScript(minSize: number): string {
   }
   
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     let selector = el.tagName.toLowerCase();
     if (el.className) {
       const classes = el.className.toString().split(' ').filter(c => c).slice(0, 2);
-      if (classes.length) selector += '.' + classes.join('.');
+      if (classes.length) selector += '.' + classes.map(c => CSS.escape(c)).join('.');
     }
     return selector;
   }
-  
+
   return JSON.stringify(issues.slice(0, 10));
 })()
 `;
@@ -311,15 +311,15 @@ const OFFSCREEN_CTA_SCRIPT = `
   }
   
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     let selector = el.tagName.toLowerCase();
     if (el.className) {
       const classes = el.className.toString().split(' ').filter(c => c).slice(0, 2);
-      if (classes.length) selector += '.' + classes.join('.');
+      if (classes.length) selector += '.' + classes.map(c => CSS.escape(c)).join('.');
     }
     return selector;
   }
-  
+
   return JSON.stringify(issues.slice(0, 5));
 })()
 `;
@@ -363,15 +363,15 @@ const FIXED_HEADER_COVERING_SCRIPT = `
   }
   
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     let selector = el.tagName.toLowerCase();
     if (el.className) {
       const classes = el.className.toString().split(' ').filter(c => c).slice(0, 2);
-      if (classes.length) selector += '.' + classes.join('.');
+      if (classes.length) selector += '.' + classes.map(c => CSS.escape(c)).join('.');
     }
     return selector;
   }
-  
+
   return JSON.stringify(issues.slice(0, 3));
 })()
 `;
@@ -405,15 +405,15 @@ const HORIZONTAL_OVERFLOW_SCRIPT = `
   }
   
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     let selector = el.tagName.toLowerCase();
     if (el.className) {
       const classes = el.className.toString().split(' ').filter(c => c).slice(0, 2);
-      if (classes.length) selector += '.' + classes.join('.');
+      if (classes.length) selector += '.' + classes.map(c => CSS.escape(c)).join('.');
     }
     return selector;
   }
-  
+
   // Sort by overflow and take top 3
   culprits.sort((a, b) => b.overflow - a.overflow);
   
@@ -486,15 +486,15 @@ const FOCUS_INDICATOR_SCRIPT = `
   }
   
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     let selector = el.tagName.toLowerCase();
     if (el.className) {
       const classes = el.className.toString().split(' ').filter(c => c).slice(0, 2);
-      if (classes.length) selector += '.' + classes.join('.');
+      if (classes.length) selector += '.' + classes.map(c => CSS.escape(c)).join('.');
     }
     return selector;
   }
-  
+
   return JSON.stringify(issues.slice(0, 10));
 })()
 `;
@@ -784,15 +784,15 @@ const AUTO_MASK_SCRIPT = `
   }
   
   function getSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     let selector = el.tagName.toLowerCase();
     if (el.className) {
       const classes = el.className.toString().split(' ').filter(c => c).slice(0, 2);
-      if (classes.length) selector += '.' + classes.join('.');
+      if (classes.length) selector += '.' + classes.map(c => CSS.escape(c)).join('.');
     }
     return selector;
   }
-  
+
   return JSON.stringify(masks);
 })()
 `;
