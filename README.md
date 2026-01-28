@@ -6,10 +6,14 @@ AI-powered terminal UI that tests websites using browser automation and LLM anal
 
 - **Beautiful Terminal UI**: Interactive TUI built with Ink for a modern CLI experience
 - **Intelligent Test Planning**: LLM generates test plans based on page content and goals
+- **Coverage-Guided Exploration**: Advanced exploration engine with state fingerprinting and budget management
 - **Business Logic Validation**: Validates websites against specification documents with requirement traceability
 - **Real Browser Testing**: Uses Playwright for actual browser interaction
 - **Sitemap Discovery**: Automatically discovers pages via sitemap.xml, robots.txt, or link crawling
 - **Parallel Page Testing**: Tests multiple pages concurrently for faster results
+- **Visual Audits**: Fast browser-based visual heuristics (overlapping elements, clipped text, tap targets)
+- **State Tracking**: Detects revisits and tracks state transitions to avoid redundant testing
+- **Auth Fixture Management**: Save and reuse authentication states for testing authenticated areas
 - **Comprehensive Reports**: Scored reports with categorized issues and evidence
 - **Screenshot Capture**: Automatic screenshots at key moments and on errors
 - **Local Storage**: All results saved locally with markdown reports
@@ -114,16 +118,54 @@ The validation mode validates a website against a specification document:
 
 ### Environment Variables
 
+#### Required
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | - | Your OpenRouter API key |
-| `OPENROUTER_MODEL` | No | `google/gemini-2.5-flash` | Default LLM model |
-| `MAX_STEPS` | No | `20` | Maximum test steps per page |
-| `MAX_PAGES` | No | `10` | Maximum pages to test |
-| `PARALLEL_BROWSERS` | No | `3` | Number of parallel browser instances |
-| `GOALS` | No | `homepage UX + primary CTA + form validation + keyboard` | Default test goals |
-| `BROWSER_TIMEOUT` | No | `30000` | Browser command timeout (ms) |
-| `DEBUG` | No | `false` | Enable verbose output |
+
+#### Core Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENROUTER_MODEL` | `anthropic/claude-sonnet-4.5` | LLM model to use |
+| `MAX_STEPS` | `20` | Maximum test steps per page |
+| `MAX_PAGES` | `50` | Maximum pages to test |
+| `PARALLEL_BROWSERS` | `5` | Number of parallel browser instances (1-10) |
+| `GOALS` | `homepage UX + primary CTA + form validation + keyboard` | Default test goals |
+| `BROWSER_TIMEOUT` | `60000` | Browser command timeout (ms) |
+| `NAVIGATION_TIMEOUT` | `45000` | Page load timeout (ms) |
+| `ACTION_TIMEOUT` | `15000` | Click/fill action timeout (ms) |
+| `DEBUG` | `false` | Enable verbose output |
+
+#### Coverage-Guided Exploration (Advanced)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COVERAGE_GUIDED` | `false` | Enable coverage-guided exploration engine |
+| `EXPLORATION_MODE` | `coverage_guided` | Strategy: `coverage_guided`, `breadth_first`, `depth_first`, `random` |
+| `BEAM_WIDTH` | `3` | Beam width for beam search exploration |
+| `BUDGET_MAX_STEPS_PER_STATE` | `10` | Max steps per unique page state |
+| `BUDGET_MAX_UNIQUE_STATES` | `100` | Max unique states to visit |
+| `BUDGET_MAX_TOTAL_STEPS` | `500` | Max total steps across all states |
+| `BUDGET_STAGNATION_THRESHOLD` | `15` | Steps without coverage gain before stopping |
+| `BUDGET_MAX_DEPTH` | `10` | Maximum exploration depth |
+| `BUDGET_MAX_TIME_MS` | `600000` | Time limit in milliseconds (10 minutes) |
+
+#### Visual Audits
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VISUAL_AUDITS` | `true` | Enable visual heuristic audits |
+| `BASELINE_DIR` | `.ui-qa/baselines` | Directory for screenshot baselines |
+| `DIFF_THRESHOLD` | `5` | Visual diff threshold percentage (0-100) |
+
+#### Auth Fixtures
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTH_FIXTURE_DIR` | `.ui-qa/auth-fixtures` | Directory for auth fixture storage |
+| `AUTH_FIXTURE` | - | Auth fixture ID or name to use for testing |
 
 ### CLI Options
 
@@ -278,6 +320,14 @@ reports/
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
+│              Coverage-Guided Exploration                    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
+│  │ Coverage │ │  State   │ │  Budget  │ │  Explorer   │   │
+│  │ Tracker  │ │ Tracker  │ │ Tracker  │ │  Engine     │   │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
 │                    Local Storage                            │
 │  Screenshots • Reports • Evidence • Markdown                │
 └─────────────────────────────────────────────────────────────┘
@@ -289,6 +339,13 @@ reports/
 1. **Planner**: Analyzes page DOM and creates intelligent test plans using LLM
 2. **Executor**: Runs the plan step-by-step using real browser automation
 3. **Judge**: Evaluates test evidence and generates scored reports with issues
+
+**Coverage-Guided Exploration (Advanced):**
+1. **Coverage Tracker**: Monitors URLs, forms, dialogs, and interactions visited
+2. **State Tracker**: Fingerprints page states to detect revisits and transitions
+3. **Budget Tracker**: Enforces exploration limits (steps, states, time, stagnation)
+4. **Action Selector**: Scores actions by novelty, business criticality, risk, and branch factor
+5. **Explorer Engine**: Executes coverage-guided exploration with beam search and backtracking
 
 **Validation Mode:**
 1. **Parser**: Parses specification documents (Markdown)

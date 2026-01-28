@@ -79,9 +79,66 @@ Add `.env` to `.gitignore` to avoid committing credentials.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUDITS_ENABLED` | `true` | Run accessibility and performance audits |
+| `VISUAL_AUDITS` | `true` | Enable visual heuristic audits (overlapping elements, clipped text, etc.) |
 | `STRICT_MODE` | `false` | Fail on any error (vs. skip and continue) |
 | `CAPTURE_BEFORE_AFTER` | `true` | Capture screenshots before and after actions |
 | `DEBUG` | `false` | Enable verbose logging |
+
+### Coverage-Guided Exploration (Advanced)
+
+Coverage-guided exploration is an advanced testing mode that uses state fingerprinting and coverage tracking to intelligently explore websites. It's disabled by default but can be enabled for more thorough testing.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COVERAGE_GUIDED` | `false` | Enable coverage-guided exploration engine |
+| `EXPLORATION_MODE` | `coverage_guided` | Exploration strategy: `coverage_guided`, `breadth_first`, `depth_first`, `random` |
+| `BEAM_WIDTH` | `3` | Number of top actions to explore in parallel (beam search width) |
+
+#### Budget Configuration
+
+Control exploration limits to prevent infinite loops and manage resource usage:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BUDGET_MAX_STEPS_PER_STATE` | `10` | Maximum steps allowed per unique page state |
+| `BUDGET_MAX_UNIQUE_STATES` | `100` | Maximum unique states to visit |
+| `BUDGET_MAX_TOTAL_STEPS` | `500` | Maximum total steps across all states |
+| `BUDGET_STAGNATION_THRESHOLD` | `15` | Steps without coverage gain before stopping |
+| `BUDGET_MAX_DEPTH` | `10` | Maximum exploration depth |
+| `BUDGET_MAX_TIME_MS` | `600000` | Time limit in milliseconds (10 minutes) |
+
+### Visual Audits
+
+Visual audits detect UI/UX issues using fast browser-based heuristics:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VISUAL_AUDITS` | `true` | Enable visual heuristic audits |
+| `BASELINE_DIR` | `.ui-qa/baselines` | Directory for storing screenshot baselines |
+| `DIFF_THRESHOLD` | `5` | Visual diff threshold percentage (0-100) for regression detection |
+
+**Visual Issues Detected:**
+- Overlapping clickable elements
+- Clipped text (overflow hidden)
+- Small tap targets (< 44px)
+- Off-screen primary CTAs
+- Fixed headers covering content
+- Horizontal overflow
+- Missing focus indicators
+
+### Auth Fixture Management
+
+Save and reuse authentication states for testing authenticated areas:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTH_FIXTURE_DIR` | `.ui-qa/auth-fixtures` | Directory for storing auth fixtures |
+| `AUTH_FIXTURE` | - | Auth fixture ID or name to use for testing (optional) |
+
+**Usage:**
+1. Manually authenticate in browser
+2. Save auth state: `ui-qa auth save my-fixture`
+3. Use in tests: `AUTH_FIXTURE=my-fixture ui-qa https://app.example.com`
 
 ### Viewports
 
@@ -116,6 +173,8 @@ See [OpenRouter Models](https://openrouter.ai/models) for the complete list.
 
 ## Example Configuration
 
+### Basic Configuration
+
 ```ini
 # Required
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
@@ -140,11 +199,36 @@ RETRY_DELAY_MS=1000
 
 # Features
 AUDITS_ENABLED=true
+VISUAL_AUDITS=true
 CAPTURE_BEFORE_AFTER=true
 DEBUG=false
 
 # Custom viewports
 VIEWPORTS=desktop:1920x1080,mobile:390x844
+```
+
+### Coverage-Guided Exploration Configuration
+
+```ini
+# Enable coverage-guided exploration
+COVERAGE_GUIDED=true
+EXPLORATION_MODE=coverage_guided
+BEAM_WIDTH=3
+
+# Budget limits
+BUDGET_MAX_TOTAL_STEPS=1000
+BUDGET_MAX_UNIQUE_STATES=200
+BUDGET_STAGNATION_THRESHOLD=20
+BUDGET_MAX_TIME_MS=900000  # 15 minutes
+
+# Visual audits
+VISUAL_AUDITS=true
+BASELINE_DIR=.ui-qa/baselines
+DIFF_THRESHOLD=5
+
+# Auth fixtures
+AUTH_FIXTURE_DIR=.ui-qa/auth-fixtures
+AUTH_FIXTURE=production-user
 ```
 
 ## CI/CD Integration

@@ -17,6 +17,7 @@ export default defineConfig({
       { text: 'Guide', link: '/getting-started' },
       { text: 'Configuration', link: '/configuration' },
       { text: 'Usage', link: '/usage' },
+      { text: 'Advanced', link: '/advanced-features' },
       { text: 'Validation', link: '/validation' },
     ],
 
@@ -32,6 +33,7 @@ export default defineConfig({
         items: [
           { text: 'Configuration', link: '/configuration' },
           { text: 'Usage', link: '/usage' },
+          { text: 'Advanced Features', link: '/advanced-features' },
           { text: 'Validation', link: '/validation' },
         ]
       }

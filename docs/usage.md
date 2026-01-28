@@ -106,6 +106,9 @@ Runs tests using Playwright across multiple viewports:
 - Screenshot capture before and after each action
 - Automatic retry with exponential backoff on failures
 - Console and error logging
+- Visual audits: Detects overlapping elements, clipped text, small tap targets, and other UI issues
+- State tracking: Avoids revisiting identical page states
+- Coverage tracking: Monitors URLs, forms, dialogs, and interactions tested
 
 #### Evaluation
 
@@ -299,7 +302,7 @@ reports/
 | `usability` | UX problems, confusing flows |
 | `functionality` | Broken features, errors |
 | `performance` | Loading, animations |
-| `visual` | Layout, responsive design |
+| `visual` | Layout, responsive design, visual heuristics (overlapping elements, clipped text, etc.) |
 
 ### Severity Levels
 
@@ -310,6 +313,84 @@ reports/
 | `medium` | Notable issues |
 | `low` | Minor improvements |
 
+## Coverage-Guided Exploration (Advanced)
+
+Coverage-guided exploration is an advanced testing mode that intelligently explores websites by:
+
+1. **State Fingerprinting**: Creates unique fingerprints for each page state to detect revisits
+2. **Coverage Tracking**: Monitors which URLs, forms, dialogs, and interactions have been tested
+3. **Budget Management**: Enforces limits on steps, states, time, and stagnation detection
+4. **Action Scoring**: Prioritizes actions based on novelty, business criticality, risk, and branch factor
+5. **Beam Search**: Explores multiple promising paths simultaneously
+
+### Enabling Coverage-Guided Exploration
+
+```bash
+# Enable via environment variable
+COVERAGE_GUIDED=true npx @usharma124/ui-qa https://example.com
+
+# Or set in .env file
+COVERAGE_GUIDED=true
+EXPLORATION_MODE=coverage_guided
+BEAM_WIDTH=3
+```
+
+### Exploration Strategies
+
+- **`coverage_guided`** (default): Scores actions by coverage potential
+- **`breadth_first`**: Prioritizes visiting new URLs
+- **`depth_first`**: Explores deeply before backtracking
+- **`random`**: Random action selection
+
+### Budget Configuration
+
+Control exploration limits:
+
+```bash
+# Limit total steps
+BUDGET_MAX_TOTAL_STEPS=500
+
+# Limit unique states
+BUDGET_MAX_UNIQUE_STATES=100
+
+# Stop if no coverage gain for 15 steps
+BUDGET_STAGNATION_THRESHOLD=15
+
+# Maximum exploration depth
+BUDGET_MAX_DEPTH=10
+
+# Time limit (10 minutes)
+BUDGET_MAX_TIME_MS=600000
+```
+
+## Auth Fixture Management
+
+Save and reuse authentication states for testing authenticated areas:
+
+### Saving Auth Fixtures
+
+1. Manually authenticate in your browser
+2. Save the auth state:
+
+```bash
+# Via API (programmatic)
+# The auth manager can save browser state after manual login
+```
+
+### Using Auth Fixtures
+
+```bash
+# Use a saved fixture
+AUTH_FIXTURE=my-fixture npx @usharma124/ui-qa https://app.example.com
+```
+
+### Supported Auth Types
+
+- Form-based login (email/password)
+- OAuth providers (Google, GitHub, Microsoft, Facebook, Twitter)
+- SSO (Single Sign-On)
+- Session-based authentication
+
 ## Safety
 
 UI QA is designed for safe operation:
@@ -318,6 +399,8 @@ UI QA is designed for safe operation:
 - Does not submit payment forms
 - Redacts sensitive data before LLM processing
 - Enforces timeouts on all operations
+- Budget limits prevent infinite exploration loops
+- State tracking prevents redundant testing
 
 ## Debugging
 

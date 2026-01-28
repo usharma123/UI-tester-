@@ -15,12 +15,18 @@ hero:
 features:
   - title: Intelligent Test Planning
     details: Generates context-aware test plans by analyzing page structure and content
+  - title: Coverage-Guided Exploration
+    details: Advanced exploration engine with state fingerprinting and budget management
   - title: Real Browser Automation
     details: Executes tests using Playwright with actual clicks, form inputs, and navigation
+  - title: Visual Audits
+    details: Fast browser-based heuristics detect overlapping elements, clipped text, and UI issues
   - title: Business Logic Validation
     details: Validates websites against specification documents with requirement traceability
   - title: Multi-Viewport Testing
     details: Tests desktop, tablet, and mobile viewports automatically with configurable sizes
+  - title: Auth Fixture Management
+    details: Save and reuse authentication states for testing authenticated areas
   - title: Visual Documentation
     details: Captures screenshots before and after each action for debugging and evidence
   - title: Concurrent Execution
