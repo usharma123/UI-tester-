@@ -17,6 +17,7 @@ export default defineConfig({
       { text: 'Guide', link: '/getting-started' },
       { text: 'Configuration', link: '/configuration' },
       { text: 'Usage', link: '/usage' },
+      { text: 'Validation', link: '/validation' },
     ],
 
     sidebar: [
@@ -31,6 +32,7 @@ export default defineConfig({
         items: [
           { text: 'Configuration', link: '/configuration' },
           { text: 'Usage', link: '/usage' },
+          { text: 'Validation', link: '/validation' },
         ]
       }
     ],

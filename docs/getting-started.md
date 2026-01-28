@@ -88,18 +88,31 @@ export OPENROUTER_API_KEY=sk-or-v1-your-key-here
 2. Run a test:
 
 ```bash
+# UI/UX testing mode (default)
 npx @usharma124/ui-qa https://example.com
+
+# Business logic validation mode
+npx @usharma124/ui-qa validate --spec requirements.md --url https://app.example.com
 ```
 
-3. View results in `.ui-qa-runs/`:
+3. View results:
 
+**Test Mode** - Results in `.ui-qa-runs/`:
 | File | Contents |
 |------|----------|
 | `report.md` | Human-readable report |
 | `report.json` | Structured data |
 | `screenshots/` | Visual evidence |
 
+**Validation Mode** - Results in specified output directory:
+| File | Contents |
+|------|----------|
+| `traceability-report.json` | Complete validation report |
+| `traceability-report.md` | Human-readable summary |
+| `screenshots/` | Visual evidence |
+
 ## Next Steps
 
 - [Configure environment variables](/configuration)
 - [Learn CLI options](/usage)
+- [Learn about validation mode](/usage#validation-mode)

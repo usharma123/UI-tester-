@@ -17,6 +17,8 @@ features:
     details: Generates context-aware test plans by analyzing page structure and content
   - title: Real Browser Automation
     details: Executes tests using Playwright with actual clicks, form inputs, and navigation
+  - title: Business Logic Validation
+    details: Validates websites against specification documents with requirement traceability
   - title: Multi-Viewport Testing
     details: Tests desktop, tablet, and mobile viewports automatically with configurable sizes
   - title: Visual Documentation
@@ -29,8 +31,14 @@ features:
 
 ## Quick Start
 
+### UI/UX Testing
 ```bash
 npx @usharma124/ui-qa https://example.com
+```
+
+### Business Logic Validation
+```bash
+npx @usharma124/ui-qa validate --spec requirements.md --url https://app.example.com
 ```
 
 ::: info Prerequisites
@@ -39,7 +47,10 @@ An [OpenRouter API key](https://openrouter.ai/) is required. See [Configuration]
 
 ## How It Works
 
-UI QA processes websites through four phases:
+UI QA offers two modes:
+
+### Test Mode (Default)
+Processes websites through four phases:
 
 | Phase | Description |
 |-------|-------------|
@@ -47,6 +58,20 @@ UI QA processes websites through four phases:
 | Planning | Generates test plans using LLM analysis |
 | Execution | Runs tests with browser automation |
 | Evaluation | Produces scored reports with findings |
+
+### Validation Mode
+Validates websites against specification documents through eight phases:
+
+| Phase | Description |
+|-------|-------------|
+| Parsing | Parses specification document (markdown) |
+| Extraction | Extracts testable requirements using LLM |
+| Rubric | Generates evaluation rubric with pass/fail conditions |
+| Discovery | Discovers site structure |
+| Planning | Creates requirement-linked test plan |
+| Execution | Runs tests with browser automation |
+| Cross-Validation | Validates results against requirements |
+| Reporting | Generates traceability report |
 
 ## Output
 

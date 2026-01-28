@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type { AppState, AppAction, AppMode, Task, TaskStatus } from "./types.js";
 import { initialState } from "./types.js";
 import type { SSEEvent, QAPhase } from "../qa/progress-types.js";
+import type { UpdateInfo } from "../updates/types.js";
 import { Header } from "./components/Header.js";
 import { SetupPrompt } from "./components/SetupPrompt.js";
 import { UrlInput } from "./components/UrlInput.js";
@@ -12,11 +13,13 @@ import { ProgressBar } from "./components/ProgressBar.js";
 import { LogStream } from "./components/LogStream.js";
 import { ResultsSummary } from "./components/ResultsSummary.js";
 import { SitemapDisplay } from "./components/SitemapDisplay.js";
+import { UpdateNotification } from "./components/UpdateNotification.js";
 import { useQARunner } from "./hooks/useQARunner.js";
 
 interface AppProps {
   initialUrl?: string;
   initialGoals?: string;
+  updateInfo?: UpdateInfo | null;
 }
 
 // Phase labels for display
@@ -252,7 +255,7 @@ const LOG_HEADER_HEIGHT = 2; // "Logs" label + margin
 const LOG_LINES = 6; // Visible log lines
 const PADDING = 2; // Top/bottom padding
 
-export function App({ initialUrl, initialGoals }: AppProps): React.ReactElement {
+export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [terminalHeight, setTerminalHeight] = useState(stdout.rows || 24);
@@ -350,6 +353,7 @@ export function App({ initialUrl, initialGoals }: AppProps): React.ReactElement 
 
   return (
     <Box flexDirection="column" padding={1}>
+      {updateInfo && <UpdateNotification updateInfo={updateInfo} />}
       <Header />
 
       {state.mode === "setup" && <SetupPrompt />}

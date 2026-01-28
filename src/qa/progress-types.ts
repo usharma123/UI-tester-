@@ -1,4 +1,11 @@
 import type { Plan, Report, Evidence, Step, ExecutedStepStatus } from "./types.js";
+import type {
+  Requirement,
+  Rubric,
+  RequirementResult,
+  TraceabilityReport,
+  ValidationPhase,
+} from "../validation/types.js";
 
 // Phases of the QA run
 export type QAPhase = "init" | "discovery" | "planning" | "execution" | "traversal" | "evaluation";
@@ -123,6 +130,55 @@ export interface PagesProgressEvent extends SSEEventBase {
   total: number;
 }
 
+// ===========================================
+// Validation-specific events
+// ===========================================
+
+// Validation phase lifecycle
+export interface ValidationPhaseStartEvent extends SSEEventBase {
+  type: "validation_phase_start";
+  phase: ValidationPhase;
+}
+
+export interface ValidationPhaseCompleteEvent extends SSEEventBase {
+  type: "validation_phase_complete";
+  phase: ValidationPhase;
+}
+
+// Requirements extracted from spec
+export interface RequirementsExtractedEvent extends SSEEventBase {
+  type: "requirements_extracted";
+  requirements: Requirement[];
+  totalCount: number;
+}
+
+// Rubric generated
+export interface RubricGeneratedEvent extends SSEEventBase {
+  type: "rubric_generated";
+  rubric: Rubric;
+}
+
+// Single requirement validated
+export interface RequirementValidatedEvent extends SSEEventBase {
+  type: "requirement_validated";
+  result: RequirementResult;
+  index: number;
+  total: number;
+}
+
+// Validation complete
+export interface ValidationCompleteEvent extends SSEEventBase {
+  type: "validation_complete";
+  report: TraceabilityReport;
+}
+
+// Validation error
+export interface ValidationErrorEvent extends SSEEventBase {
+  type: "validation_error";
+  message: string;
+  phase?: ValidationPhase;
+}
+
 // Union of all SSE event types
 export type SSEEvent =
   | ConnectedEvent
@@ -138,7 +194,15 @@ export type SSEEvent =
   | SitemapEvent
   | PageStartEvent
   | PageCompleteEvent
-  | PagesProgressEvent;
+  | PagesProgressEvent
+  // Validation events
+  | ValidationPhaseStartEvent
+  | ValidationPhaseCompleteEvent
+  | RequirementsExtractedEvent
+  | RubricGeneratedEvent
+  | RequirementValidatedEvent
+  | ValidationCompleteEvent
+  | ValidationErrorEvent;
 
 // Progress callback type for streaming runner
 export type ProgressCallback = (event: SSEEvent) => void;

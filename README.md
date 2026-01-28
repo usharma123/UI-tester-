@@ -6,12 +6,14 @@ AI-powered terminal UI that tests websites using browser automation and LLM anal
 
 - **Beautiful Terminal UI**: Interactive TUI built with Ink for a modern CLI experience
 - **Intelligent Test Planning**: LLM generates test plans based on page content and goals
+- **Business Logic Validation**: Validates websites against specification documents with requirement traceability
 - **Real Browser Testing**: Uses Playwright for actual browser interaction
 - **Sitemap Discovery**: Automatically discovers pages via sitemap.xml, robots.txt, or link crawling
 - **Parallel Page Testing**: Tests multiple pages concurrently for faster results
 - **Comprehensive Reports**: Scored reports with categorized issues and evidence
 - **Screenshot Capture**: Automatic screenshots at key moments and on errors
 - **Local Storage**: All results saved locally with markdown reports
+- **Update Notifications**: Automatic checks for new versions
 
 ## Prerequisites
 
@@ -39,6 +41,8 @@ cp env.example .env
 
 ## Usage
 
+### UI/UX Testing Mode
+
 ```bash
 # Start the TUI (interactive mode)
 bun start
@@ -56,6 +60,19 @@ bun dev
 bun start --help
 ```
 
+### Business Logic Validation Mode
+
+```bash
+# Validate a website against a specification
+bun start validate --spec ./requirements.md --url https://app.example.com
+
+# With custom output directory
+bun start validate -s ./prd.md -u https://staging.app.com -o ./reports
+
+# Show validation help
+bun start validate --help
+```
+
 ### Interactive Mode
 
 When you run without a URL, the TUI will prompt you to enter one:
@@ -69,6 +86,22 @@ When you run without a URL, the TUI will prompt you to enter one:
    - **Execution**: Runs additional planned tests
    - **Evaluation**: Generates final scored report
 3. View results summary with score and issues
+
+### Validation Mode
+
+The validation mode validates a website against a specification document:
+
+1. Provide a specification file (Markdown) and URL
+2. Watch the validation phases:
+   - **Parsing**: Parses specification document
+   - **Extraction**: Extracts testable requirements using LLM
+   - **Rubric**: Generates evaluation rubric
+   - **Discovery**: Discovers site structure
+   - **Planning**: Creates requirement-linked test plan
+   - **Execution**: Runs tests with browser automation
+   - **Cross-Validation**: Validates results against requirements
+   - **Reporting**: Generates traceability report
+3. View traceability report with requirement-to-evidence mapping
 
 ### Keyboard Shortcuts
 
@@ -94,12 +127,25 @@ When you run without a URL, the TUI will prompt you to enter one:
 
 ### CLI Options
 
+**Test Mode:**
+
 | Option | Description |
 |--------|-------------|
 | `--goals <string>` | Test goals to focus on |
 | `--help, -h` | Show help message |
 
+**Validation Mode:**
+
+| Option | Description |
+|--------|-------------|
+| `--spec, -s <file>` | Path to requirements/specification file (required) |
+| `--url, -u <url>` | URL to validate against (required) |
+| `--output, -o <dir>` | Output directory for reports (default: ./reports) |
+| `--help, -h` | Show help message |
+
 ## Output
+
+### Test Mode Output
 
 Results are saved to `.ui-qa-runs/<run-id>/`:
 
@@ -117,8 +163,7 @@ Results are saved to `.ui-qa-runs/<run-id>/`:
         └── ...
 ```
 
-### Report Contents
-
+**Report Contents:**
 - **Score**: 0-100 quality score
 - **Summary**: Overall assessment
 - **Issues**: Categorized problems with:
@@ -127,6 +172,32 @@ Results are saved to `.ui-qa-runs/<run-id>/`:
   - Reproduction steps
   - Suggested fixes
   - Screenshot evidence
+
+### Validation Mode Output
+
+Results are saved to the specified output directory (default: `./reports`):
+
+```
+reports/
+└── validation-1234567890/
+    ├── traceability-report.json    # Complete validation report
+    ├── traceability-report.md      # Human-readable summary
+    └── screenshots/                # Evidence linked to requirements
+        ├── req-001-login.png
+        └── ...
+```
+
+**Report Contents:**
+- **Requirements**: All extracted requirements with IDs, priorities, and acceptance criteria
+- **Rubric**: Evaluation criteria with pass/fail conditions
+- **Results**: Requirement validation results with:
+  - Status (pass/partial/fail/not_tested)
+  - Score (0-100 per requirement)
+  - Evidence screenshots
+  - Reasoning
+- **Overall Score**: Weighted average based on rubric weights
+- **Coverage Score**: Percentage of requirements successfully tested
+- **Traceability**: Links requirements to test evidence
 
 ## Project Structure
 
@@ -137,16 +208,22 @@ Results are saved to `.ui-qa-runs/<run-id>/`:
 │   ├── config.ts           # Configuration management
 │   ├── agentBrowser.ts     # Browser automation wrapper
 │   ├── ink/                # TUI components
-│   │   ├── App.tsx         # Main TUI application
+│   │   ├── App.tsx         # Main TUI application (test mode)
+│   │   ├── ValidateApp.tsx # Validation mode TUI
 │   │   ├── components/     # UI components
 │   │   │   ├── Header.tsx
 │   │   │   ├── UrlInput.tsx
 │   │   │   ├── PhaseIndicator.tsx
 │   │   │   ├── TaskList.tsx
 │   │   │   ├── LogStream.tsx
-│   │   │   └── ResultsSummary.tsx
+│   │   │   ├── ResultsSummary.tsx
+│   │   │   ├── RequirementList.tsx
+│   │   │   ├── RubricDisplay.tsx
+│   │   │   ├── TraceabilityReport.tsx
+│   │   │   └── ValidationProgress.tsx
 │   │   └── hooks/
-│   │       └── useQARunner.ts
+│   │       ├── useQARunner.ts
+│   │       └── useValidationRunner.ts
 │   ├── qa/                 # QA core logic
 │   │   ├── planner.ts      # Test plan generation
 │   │   ├── executor.ts     # Test execution
@@ -154,9 +231,23 @@ Results are saved to `.ui-qa-runs/<run-id>/`:
 │   │   ├── run-streaming.ts # Streaming run orchestrator
 │   │   ├── parallelTester.ts # Parallel page testing
 │   │   └── types.ts        # Type definitions
+│   ├── validation/         # Validation feature
+│   │   ├── run-validation.ts # Validation orchestrator
+│   │   ├── extractor.ts    # Requirement extraction
+│   │   ├── rubric-generator.ts # Rubric generation
+│   │   ├── cross-validator.ts # Cross-validation
+│   │   ├── traceability.ts # Report generation
+│   │   ├── parsers/        # Document parsers
+│   │   └── types.ts        # Validation types
 │   ├── prompts/            # LLM prompts
 │   │   ├── planner.ts
-│   │   └── judge.ts
+│   │   ├── judge.ts
+│   │   ├── extractor.ts
+│   │   ├── rubric.ts
+│   │   └── cross-validator.ts
+│   ├── updates/            # Update checking
+│   │   ├── checker.ts
+│   │   └── types.ts
 │   ├── storage/
 │   │   └── local.ts        # Local file storage
 │   └── utils/              # Utility functions
@@ -194,9 +285,19 @@ Results are saved to `.ui-qa-runs/<run-id>/`:
 
 ### Pipeline Components
 
+**Test Mode:**
 1. **Planner**: Analyzes page DOM and creates intelligent test plans using LLM
 2. **Executor**: Runs the plan step-by-step using real browser automation
 3. **Judge**: Evaluates test evidence and generates scored reports with issues
+
+**Validation Mode:**
+1. **Parser**: Parses specification documents (Markdown)
+2. **Extractor**: Uses LLM to extract testable requirements
+3. **Rubric Generator**: Creates evaluation rubrics with pass/fail conditions
+4. **Planner**: Creates requirement-linked test plans
+5. **Executor**: Runs tests with browser automation
+6. **Cross-Validator**: Validates test results against requirements
+7. **Report Generator**: Creates traceability reports linking requirements to evidence
 
 ## Building for Distribution
 
