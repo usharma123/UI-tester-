@@ -8,7 +8,7 @@ import { checkForUpdates } from "./updates/index.js";
 import type { UpdateInfo } from "./updates/types.js";
 
 // Package version - used for update checking
-const PACKAGE_VERSION = "1.0.0";
+const PACKAGE_VERSION = "1.0.1";
 
 // Command types
 type Command = "test" | "validate";
