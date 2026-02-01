@@ -59,7 +59,7 @@ export function UrlInput({ value, onChange, onSubmit }: UrlInputProps): React.Re
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>[Enter] Start  [Ctrl+C] Exit</Text>
+        <Text dimColor>[Enter] Continue  [Ctrl+C] Exit</Text>
       </Box>
     </Box>
   );

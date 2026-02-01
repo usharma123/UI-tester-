@@ -20,6 +20,7 @@ import { useQARunner } from "./hooks/useQARunner.js";
 interface AppProps {
   initialUrl?: string;
   initialGoals?: string;
+  initialExplorationMode?: ExplorationMode;
   updateInfo?: UpdateInfo | null;
 }
 
@@ -259,7 +260,7 @@ const LOG_HEADER_HEIGHT = 2; // "Logs" label + margin
 const LOG_LINES = 6; // Visible log lines
 const PADDING = 2; // Top/bottom padding
 
-export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.ReactElement {
+export function App({ initialUrl, initialGoals, initialExplorationMode, updateInfo }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [terminalHeight, setTerminalHeight] = useState(stdout.rows || 24);
@@ -281,6 +282,7 @@ export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.R
     mode: hasApiKey ? "input" : "setup",
     url: initialUrl || "",
     goals: initialGoals || "",
+    explorationMode: initialExplorationMode || "coverage_guided",
   });
 
   // Event handler for QA runner
@@ -291,13 +293,19 @@ export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.R
   // QA runner hook
   const { startRun, isRunning } = useQARunner(handleEvent);
 
-  // Start run automatically if URL provided via CLI (skip mode selection)
+  // Handle URL provided via CLI
   useEffect(() => {
     if (initialUrl && hasApiKey && state.mode === "input") {
       dispatch({ type: "SET_URL", url: initialUrl });
       if (initialGoals) dispatch({ type: "SET_GOALS", goals: initialGoals });
-      // Skip mode selection when URL provided via CLI, use default mode
-      handleStartRun(initialUrl, initialGoals, state.explorationMode);
+      if (initialExplorationMode) {
+        // Mode explicitly specified via CLI - skip mode selection and start
+        dispatch({ type: "SET_EXPLORATION_MODE", explorationMode: initialExplorationMode });
+        handleStartRun(initialUrl, initialGoals, initialExplorationMode);
+      } else {
+        // No mode specified - show mode selection screen
+        dispatch({ type: "SET_MODE", mode: "mode_select" });
+      }
     }
   }, []);
 
