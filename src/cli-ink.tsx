@@ -13,12 +13,15 @@ const PACKAGE_VERSION = "1.0.1";
 // Command types
 type Command = "test" | "validate";
 
+type ExplorationModeArg = "coverage" | "parallel" | "llm";
+
 interface ParsedArgs {
   command: Command;
   url?: string;
   goals?: string;
   specFile?: string;
   outputDir?: string;
+  explorationMode?: ExplorationModeArg;
   help: boolean;
 }
 
@@ -67,6 +70,15 @@ function parseArgs(): ParsedArgs {
 
     if ((arg === "--output" || arg === "-o") && i + 1 < args.length) {
       result.outputDir = args[i + 1];
+      i += 2;
+      continue;
+    }
+
+    if ((arg === "--mode" || arg === "-m") && i + 1 < args.length) {
+      const modeArg = args[i + 1].toLowerCase();
+      if (modeArg === "coverage" || modeArg === "parallel" || modeArg === "llm") {
+        result.explorationMode = modeArg as ExplorationModeArg;
+      }
       i += 2;
       continue;
     }
@@ -129,16 +141,23 @@ Commands:
 
 Options:
   --goals, -g <string>  Test goals (default: "homepage UX + primary CTA + form validation + keyboard")
+  --mode, -m <mode>     Exploration mode: coverage, parallel, or llm
   --help, -h            Show this help message
 
 Examples:
   ui-qa                           # Interactive mode - prompts for URL
   ui-qa https://localhost:3000    # Direct mode - starts testing immediately
   ui-qa https://example.com --goals "test checkout flow"
+  ui-qa https://example.com --mode llm    # Use LLM-guided exploration
   ui-qa validate --spec ./requirements.md --url https://app.example.com
 
 Environment Variables:
   OPENROUTER_API_KEY  Required. Your OpenRouter API key.
+
+Exploration Modes (selectable in interactive mode):
+  coverage_guided  Smart exploration with state tracking and beam search (default)
+  parallel         Fast systematic testing with multiple browsers
+  llm_guided       AI-driven graph traversal with smart form/search handling
 
 Setup:
   1. Create a .env file in your project directory
@@ -194,10 +213,19 @@ async function main() {
       />
     );
   } else {
+    // Map CLI mode arg to ExplorationMode
+    const modeMap: Record<string, "coverage_guided" | "parallel" | "llm_guided"> = {
+      coverage: "coverage_guided",
+      parallel: "parallel",
+      llm: "llm_guided",
+    };
+    const initialMode = parsed.explorationMode ? modeMap[parsed.explorationMode] : undefined;
+
     render(
       <App
         initialUrl={parsed.url}
         initialGoals={parsed.goals}
+        initialExplorationMode={initialMode}
         updateInfo={updateInfo}
       />
     );
