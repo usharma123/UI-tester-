@@ -50,6 +50,30 @@ export interface Config {
   authFixtureDir: string;
   /** Auth fixture to use for this run (ID or name) */
   authFixture?: string;
+
+  // ============================================================================
+  // LLM Navigator Config
+  // ============================================================================
+
+  /** Configuration for LLM-guided exploration */
+  llmNavigatorConfig: LLMNavigatorConfig;
+}
+
+// ============================================================================
+// LLM Navigator Config Type
+// ============================================================================
+
+export interface LLMNavigatorConfig {
+  /** Whether LLM navigation is enabled */
+  enabled: boolean;
+  /** Model to use for navigation decisions */
+  model: string;
+  /** Temperature for LLM responses (0-1, lower = more deterministic) */
+  temperature: number;
+  /** Maximum LLM calls per exploration step */
+  maxLLMCallsPerStep: number;
+  /** Whether to use smart interactions for search/forms */
+  smartInteractions: boolean;
 }
 
 // ============================================================================
@@ -71,7 +95,7 @@ export interface BudgetConfig {
   maxTimeMs: number;
 }
 
-export type ExplorationMode = "coverage_guided" | "breadth_first" | "depth_first" | "random";
+export type ExplorationMode = "coverage_guided" | "breadth_first" | "depth_first" | "random" | "llm_guided";
 
 export interface CLIOptions {
   goals?: string;
@@ -92,6 +116,14 @@ const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
   stagnationThreshold: 15,
   maxDepth: 10,
   maxTimeMs: 600000, // 10 minutes
+};
+
+const DEFAULT_LLM_NAVIGATOR_CONFIG: LLMNavigatorConfig = {
+  enabled: false,
+  model: "anthropic/claude-sonnet-4-20250514",
+  temperature: 0.3,
+  maxLLMCallsPerStep: 2,
+  smartInteractions: true,
 };
 
 const DEFAULT_CONFIG = {
@@ -127,6 +159,8 @@ const DEFAULT_CONFIG = {
   diffThreshold: 5,
   // Auth fixture defaults
   authFixtureDir: ".ui-qa/auth-fixtures",
+  // LLM navigator defaults
+  llmNavigatorConfig: DEFAULT_LLM_NAVIGATOR_CONFIG,
 };
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -157,9 +191,20 @@ function parseViewports(value: string | undefined, defaults: ViewportConfig[]): 
 
 function parseExplorationMode(value: string | undefined, defaultValue: ExplorationMode): ExplorationMode {
   if (!value) return defaultValue;
-  const valid: ExplorationMode[] = ["coverage_guided", "breadth_first", "depth_first", "random"];
+  const valid: ExplorationMode[] = ["coverage_guided", "breadth_first", "depth_first", "random", "llm_guided"];
   const normalized = value.toLowerCase().replace(/-/g, "_") as ExplorationMode;
   return valid.includes(normalized) ? normalized : defaultValue;
+}
+
+function parseLLMNavigatorConfig(env: NodeJS.ProcessEnv): LLMNavigatorConfig {
+  const explorationMode = parseExplorationMode(env.EXPLORATION_MODE, "coverage_guided");
+  return {
+    enabled: explorationMode === "llm_guided" || parseBoolean(env.LLM_NAVIGATOR_ENABLED, DEFAULT_LLM_NAVIGATOR_CONFIG.enabled),
+    model: env.LLM_NAVIGATOR_MODEL ?? DEFAULT_LLM_NAVIGATOR_CONFIG.model,
+    temperature: parseFloat(env.LLM_NAVIGATOR_TEMPERATURE ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.temperature)),
+    maxLLMCallsPerStep: parseInt(env.LLM_MAX_CALLS_PER_STEP ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.maxLLMCallsPerStep), 10),
+    smartInteractions: parseBoolean(env.LLM_SMART_INTERACTIONS, DEFAULT_LLM_NAVIGATOR_CONFIG.smartInteractions),
+  };
 }
 
 function parseBudgetConfig(env: NodeJS.ProcessEnv): BudgetConfig {
@@ -217,5 +262,8 @@ export function loadConfig(cliOptions: CLIOptions = {}): Config {
     // Auth fixture config
     authFixtureDir: process.env.AUTH_FIXTURE_DIR ?? DEFAULT_CONFIG.authFixtureDir,
     authFixture: process.env.AUTH_FIXTURE,
+
+    // LLM navigator config
+    llmNavigatorConfig: parseLLMNavigatorConfig(process.env),
   };
 }

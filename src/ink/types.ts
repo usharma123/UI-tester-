@@ -2,7 +2,7 @@ import type { Report, Evidence, Step, ExecutedStepStatus } from "../qa/types.js"
 import type { QAPhase, SSEEvent, SitemapUrl } from "../qa/progress-types.js";
 
 // Exploration mode selection
-export type ExplorationMode = "coverage_guided" | "parallel";
+export type ExplorationMode = "coverage_guided" | "parallel" | "llm_guided";
 
 // App state machine
 export type AppMode = "setup" | "input" | "mode_select" | "running" | "complete" | "error";

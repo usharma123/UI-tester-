@@ -18,7 +18,7 @@ import { extractActionCandidates, buildScoringContext, createActionSelector } fr
 // Types
 // ============================================================================
 
-export type ExplorationStrategy = "coverage_guided" | "breadth_first" | "depth_first" | "random";
+export type ExplorationStrategy = "coverage_guided" | "breadth_first" | "depth_first" | "random" | "llm_guided";
 
 export interface ExplorationConfig {
   /** Exploration strategy to use (default: coverage_guided) */
@@ -356,6 +356,11 @@ export function createExplorer(
           // Shuffle and return random candidates
           const shuffled = [...candidates].sort(() => Math.random() - 0.5);
           return shuffled.slice(0, beamWidth);
+
+        case "llm_guided":
+          // LLM-guided mode uses its own exploration loop (llm-explorer.ts)
+          // This fallback uses coverage_guided for compatibility when called from this explorer
+          return actionSelector.selectTopActions(candidates, context, beamWidth);
 
         default:
           return actionSelector.selectTopActions(candidates, context, beamWidth);
