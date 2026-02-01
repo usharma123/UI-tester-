@@ -37,8 +37,17 @@ export function useQARunner(onEvent: EventHandler): UseQARunnerResult {
         // Load config from environment
         const config = loadConfig(goals ? { goals } : {});
 
-        // Override coverage-guided setting based on user selection
-        config.coverageGuidedEnabled = explorationMode === "coverage_guided";
+        // Override exploration settings based on user selection
+        if (explorationMode === "llm_guided") {
+          config.coverageGuidedEnabled = true;
+          config.explorationMode = "llm_guided";
+          config.llmNavigatorConfig.enabled = true;
+        } else if (explorationMode === "coverage_guided") {
+          config.coverageGuidedEnabled = true;
+          config.explorationMode = "coverage_guided";
+        } else {
+          config.coverageGuidedEnabled = false;
+        }
 
         // Generate a unique run ID for this CLI session
         // Since we're running locally, we don't have a Convex run ID

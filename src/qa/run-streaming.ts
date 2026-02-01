@@ -20,6 +20,8 @@ import { createBudgetTracker } from "./budget.js";
 import { createCoverageTracker, collectPageCoverage, getCoverageRecommendations } from "./coverage.js";
 import { createExplorer, type ExplorationResult } from "./explorer.js";
 import { createAuthManager } from "./auth.js";
+// LLM-guided exploration imports
+import { createLLMExplorer } from "./llm-explorer.js";
 
 export interface StreamingRunOptions {
   config: Config;
@@ -442,7 +444,140 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
     // Pages to test - used in parallel mode and for filtering additional steps
     let pagesToTest = sitemap.urls.slice(0, config.maxPages);
 
-    if (config.coverageGuidedEnabled) {
+    // Check if LLM-guided mode is enabled
+    const useLLMGuided = config.explorationMode === "llm_guided" && config.llmNavigatorConfig?.enabled;
+
+    if (useLLMGuided) {
+      // === LLM-Guided Exploration Mode ===
+      emit(onProgress, {
+        type: "log",
+        message: "Starting LLM-guided exploration...",
+        level: "info"
+      });
+
+      // Create trackers for exploration
+      const stateTracker = createStateTracker();
+      const budgetTracker = createBudgetTracker(config.budgetConfig);
+      const coverageTracker = createCoverageTracker();
+
+      // Create LLM explorer
+      const llmExplorer = createLLMExplorer(
+        browser,
+        coverageTracker,
+        stateTracker,
+        budgetTracker,
+        config.openRouterApiKey,
+        {
+          llmConfig: {
+            model: config.llmNavigatorConfig.model,
+            temperature: config.llmNavigatorConfig.temperature,
+            smartInteractions: config.llmNavigatorConfig.smartInteractions,
+          },
+          maxDepth: config.budgetConfig.maxDepth,
+        }
+      );
+
+      // Run LLM-guided exploration
+      const llmResult = await llmExplorer.explore(url, {
+        onStart: () => {
+          emit(onProgress, { type: "log", message: "LLM exploration started", level: "info" });
+        },
+        onBeforeAction: (edge, depth) => {
+          emit(onProgress, {
+            type: "step_start",
+            stepIndex: globalStepIndex,
+            step: {
+              type: edge.action.type as Step["type"],
+              selector: edge.action.selector,
+              goal: `${edge.action.type} on "${edge.action.element.text?.slice(0, 50) || edge.action.selector}"`,
+            },
+            totalSteps: config.budgetConfig.maxTotalSteps,
+          });
+          emit(onProgress, {
+            type: "log",
+            message: `[Depth ${depth}] ${edge.action.type} on "${edge.action.element.text?.slice(0, 30) || edge.action.selector}"`,
+            level: "info",
+          });
+        },
+        onAfterAction: async (edge, success, newState) => {
+          const stateInfo = newState ? " (new state)" : "";
+          emit(onProgress, {
+            type: "step_complete",
+            stepIndex: globalStepIndex,
+            status: success ? "success" : "failed",
+            result: success ? `Completed ${edge.action.type}${stateInfo}` : undefined,
+            error: success ? undefined : edge.lastError,
+          });
+          emit(onProgress, {
+            type: "log",
+            message: `Step ${globalStepIndex + 1} ${success ? "succeeded" : "failed"}${stateInfo}`,
+            level: success ? "info" : "warn",
+          });
+
+          // Take screenshot after each action
+          const filename = `step-${String(screenshotCounter).padStart(2, "0")}-after.png`;
+          const filepath = join(screenshotDir, filename);
+          try {
+            await browser.screenshot(filepath);
+            screenshotMap[filepath] = globalStepIndex;
+            await saveAndEmitScreenshot(filepath, globalStepIndex, `After ${edge.action.type}`);
+            screenshotCounter++;
+          } catch {
+            // Ignore screenshot errors
+          }
+
+          // Convert to executed step
+          const executedStep: ExecutedStep = {
+            index: globalStepIndex,
+            step: {
+              type: edge.action.type as Step["type"],
+              selector: edge.action.selector,
+              note: `${edge.action.type} on "${edge.action.element.text?.slice(0, 50) || edge.action.selector}"`,
+            },
+            status: success ? "success" : "failed",
+            timestamp: Date.now(),
+            result: success ? `Completed ${edge.action.type}` : undefined,
+            error: success ? undefined : edge.lastError,
+          };
+          executedSteps.push(executedStep);
+
+          if (!success && edge.lastError) {
+            errors.push({ stepIndex: globalStepIndex, error: edge.lastError });
+          }
+
+          globalStepIndex++;
+        },
+        onBacktrack: (node, depth) => {
+          emit(onProgress, {
+            type: "log",
+            message: `Backtracking to ${node.url} (depth ${depth})`,
+            level: "info",
+          });
+        },
+        onComplete: (result) => {
+          emit(onProgress, {
+            type: "log",
+            message: `LLM exploration complete: ${result.terminationReason} (${result.totalSteps} steps, ${result.uniqueStates} states, ${result.uniqueUrls} URLs)`,
+            level: "info",
+          });
+        },
+        onLog: (message, level) => {
+          emit(onProgress, { type: "log", message, level });
+        },
+      });
+
+      // Report graph stats
+      const graphStats = llmResult.graph.getStats();
+      emit(onProgress, {
+        type: "log",
+        message: `Graph: ${graphStats.totalNodes} nodes, ${graphStats.totalEdges} edges, ${graphStats.exploredEdges} explored`,
+        level: "info",
+      });
+
+      // Check if exploration was blocked
+      blocked = llmResult.terminationReason === "error";
+
+    } else if (config.coverageGuidedEnabled) {
       // === Coverage-Guided Exploration Mode ===
       emit(onProgress, {
         type: "log",
