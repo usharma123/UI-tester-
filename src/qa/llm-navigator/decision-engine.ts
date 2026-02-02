@@ -19,7 +19,8 @@ import type {
   ActionDecision,
 } from "./types.js";
 import { DEFAULT_LLM_NAVIGATOR_CONFIG } from "./types.js";
-import { buildActionSelectionMessages, buildSmartInteractionMessages } from "./prompts.js";
+import { buildActionSelectionMessages, buildSmartInteractionMessages, buildCompactActionSelectionMessages } from "./prompts.js";
+import { createHeuristicAnalyzer, type HeuristicAnalyzer } from "./heuristic-analyzer.js";
 
 // ============================================================================
 // API Client
@@ -95,10 +96,24 @@ export function createDecisionEngine(
     ...config,
   };
 
+  // Create heuristic analyzer
+  const heuristicAnalyzer: HeuristicAnalyzer = createHeuristicAnalyzer({
+    confidenceThreshold: fullConfig.heuristicConfidenceThreshold,
+  });
+
+  // Statistics tracking
+  let stats = {
+    heuristicDecisions: 0,
+    aiEscalations: 0,
+    failures: 0,
+    totalDecisions: 0,
+  };
+
   async function callLLM<T>(
     systemPrompt: string,
     userPrompt: string,
-    retries: number = fullConfig.maxRetries
+    retries: number = fullConfig.maxRetries,
+    timeoutMs: number = fullConfig.timeoutMs
   ): Promise<T> {
     const messages: OpenRouterMessage[] = [
       { role: "system", content: systemPrompt },
@@ -117,7 +132,7 @@ export function createDecisionEngine(
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const response = await callOpenRouter(apiKey, request, fullConfig.timeoutMs);
+        const response = await callOpenRouter(apiKey, request, timeoutMs);
 
         if (!response.choices || response.choices.length === 0) {
           throw new Error("No response from LLM");
@@ -143,6 +158,8 @@ export function createDecisionEngine(
     async selectAction(context: LLMDecisionContext): Promise<LLMDecisionResult> {
       const { node, pendingEdges, coverage, recentHistory } = context;
 
+      stats.totalDecisions++;
+
       // If no pending edges, branch is exhausted
       if (pendingEdges.length === 0) {
         return {
@@ -156,16 +173,112 @@ export function createDecisionEngine(
       // Get already explored edges
       const exploredEdges = node.actions.filter(e => e.status === "explored" || e.status === "failed");
 
-      try {
-        const { system, user } = buildActionSelectionMessages(
+      // Build visited URLs set for heuristic analysis
+      const visitedUrls = new Set<string>();
+      // We could track this from coverage, but for now just use current URL
+      visitedUrls.add(node.url);
+
+      // ========================================================================
+      // TIER 1: Try Heuristic First (if enabled)
+      // ========================================================================
+      if (fullConfig.enableHeuristicFirst) {
+        const heuristicResult = heuristicAnalyzer.analyze(
           node,
           pendingEdges,
           exploredEdges,
-          coverage,
-          recentHistory
+          visitedUrls
         );
 
-        const response = await callLLM<LLMDecisionResponse>(system, user);
+        // Check if heuristic decision is confident enough
+        if (heuristicAnalyzer.shouldAccept(heuristicResult)) {
+          stats.heuristicDecisions++;
+
+          console.log(`[Heuristic] ${heuristicResult.reason} (confidence: ${heuristicResult.confidence}%)`);
+
+          // Handle backtrack decision
+          if (heuristicResult.decision === "backtrack") {
+            return {
+              topAction: null,
+              allDecisions: [],
+              branchExhausted: true,
+              exhaustedReason: heuristicResult.reason,
+            };
+          }
+
+          // Handle select_action decision
+          if (heuristicResult.decision === "select_action" && heuristicResult.selectedEdge) {
+            const selectedEdge = pendingEdges.find(e => e.id === heuristicResult.selectedEdge);
+
+            if (selectedEdge) {
+              return {
+                topAction: selectedEdge,
+                allDecisions: [{
+                  actionId: selectedEdge.id,
+                  priority: 10,
+                  rationale: `Heuristic: ${heuristicResult.reason}`,
+                }],
+                branchExhausted: false,
+              };
+            }
+          }
+        }
+
+        // If heuristic is uncertain, log and escalate to AI
+        if (heuristicResult.decision === "uncertain") {
+          console.log(`[Escalating to AI] ${heuristicResult.reason} (confidence: ${heuristicResult.confidence}%)`);
+        }
+      }
+
+      // ========================================================================
+      // TIER 2: Escalate to AI
+      // ========================================================================
+      stats.aiEscalations++;
+
+      try {
+        let response: LLMDecisionResponse;
+
+        // Use compact prompt if heuristic first is enabled
+        if (fullConfig.enableHeuristicFirst) {
+          // Get top candidates for AI to consider
+          const topCandidates = heuristicAnalyzer.getTopCandidatesForAI(
+            pendingEdges,
+            visitedUrls,
+            node.url,
+            5
+          );
+
+          const heuristicResult = heuristicAnalyzer.analyze(
+            node,
+            pendingEdges,
+            exploredEdges,
+            visitedUrls
+          );
+
+          const { system, user } = buildCompactActionSelectionMessages(
+            node,
+            topCandidates,
+            heuristicResult,
+            coverage
+          );
+
+          response = await callLLM<LLMDecisionResponse>(
+            system,
+            user,
+            fullConfig.maxAIRetries,
+            fullConfig.maxAITimeout
+          );
+        } else {
+          // Use full prompt if heuristic is disabled
+          const { system, user } = buildActionSelectionMessages(
+            node,
+            pendingEdges,
+            exploredEdges,
+            coverage,
+            recentHistory
+          );
+
+          response = await callLLM<LLMDecisionResponse>(system, user);
+        }
 
         // Validate and process decisions
         const validDecisions: ActionDecision[] = [];
@@ -201,32 +314,18 @@ export function createDecisionEngine(
           interactionHint,
         };
       } catch (error) {
-        console.warn("LLM decision failed, falling back to heuristic:", error);
+        // ========================================================================
+        // TIER 3: True Failure
+        // ========================================================================
+        stats.failures++;
+        console.warn(`[Failure] Both heuristic and AI failed:`, error);
 
-        // Fallback: return first pending edge sorted by basic heuristics
-        const sortedEdges = [...pendingEdges].sort((a, b) => {
-          // Prioritize navigation links
-          const aIsNav = a.action.element.href ? 1 : 0;
-          const bIsNav = b.action.element.href ? 1 : 0;
-          if (aIsNav !== bIsNav) return bIsNav - aIsNav;
-
-          // Prioritize forms/inputs
-          const aIsForm = a.action.type === "fill" ? 1 : 0;
-          const bIsForm = b.action.type === "fill" ? 1 : 0;
-          if (aIsForm !== bIsForm) return bIsForm - aIsForm;
-
-          return 0;
-        });
-
+        // Return null to indicate true failure
         return {
-          topAction: sortedEdges[0] || null,
-          allDecisions: sortedEdges.map((edge, i) => ({
-            actionId: edge.id,
-            priority: 10 - i,
-            rationale: "Heuristic fallback",
-          })),
-          branchExhausted: sortedEdges.length === 0,
-          exhaustedReason: sortedEdges.length === 0 ? "No actions available" : undefined,
+          topAction: null,
+          allDecisions: [],
+          branchExhausted: true,
+          exhaustedReason: `Decision failed: ${error instanceof Error ? error.message : String(error)}`,
         };
       }
     },
@@ -255,6 +354,10 @@ export function createDecisionEngine(
 
     getConfig(): LLMNavigatorConfig {
       return { ...fullConfig };
+    },
+
+    getStats(): typeof stats {
+      return { ...stats };
     },
   };
 }

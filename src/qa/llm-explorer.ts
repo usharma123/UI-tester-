@@ -60,6 +60,14 @@ export interface LLMExplorationResult {
   uniqueUrls: number;
   /** Unique states discovered */
   uniqueStates: number;
+  /** Decision statistics */
+  decisionStats?: {
+    heuristicDecisions: number;
+    aiEscalations: number;
+    failures: number;
+    totalDecisions: number;
+    heuristicHitRate: number;
+  };
 }
 
 export interface LLMExplorerCallbacks {
@@ -530,14 +538,37 @@ export function createLLMExplorer(
       }
 
       const stats = graph.getStats();
+      const decisionStats = decisionEngine.getStats();
+      const durationMs = Date.now() - startTime;
+
       const result: LLMExplorationResult = {
         graph,
         totalSteps,
         terminationReason,
-        durationMs: Date.now() - startTime,
+        durationMs,
         uniqueUrls: coverage.getStats().totalUrls,
         uniqueStates: stats.totalNodes,
+        decisionStats: {
+          ...decisionStats,
+          heuristicHitRate: decisionStats.totalDecisions > 0
+            ? (decisionStats.heuristicDecisions / decisionStats.totalDecisions) * 100
+            : 0,
+        },
       };
+
+      // Log decision statistics
+      if (decisionStats.totalDecisions > 0) {
+        log(callbacks, `\n=== Decision Statistics ===`);
+        log(callbacks, `Total decisions: ${decisionStats.totalDecisions}`);
+        log(callbacks, `Heuristic: ${decisionStats.heuristicDecisions} (${result.decisionStats.heuristicHitRate.toFixed(1)}%)`);
+        log(callbacks, `AI escalations: ${decisionStats.aiEscalations} (${((decisionStats.aiEscalations / decisionStats.totalDecisions) * 100).toFixed(1)}%)`);
+        log(callbacks, `Failures: ${decisionStats.failures} (${((decisionStats.failures / decisionStats.totalDecisions) * 100).toFixed(1)}%)`);
+
+        const avgTimePerDecision = durationMs / decisionStats.totalDecisions;
+        const estimatedTimeSaved = decisionStats.heuristicDecisions * 10; // Assume ~10s saved per heuristic decision
+        log(callbacks, `Avg time per decision: ${avgTimePerDecision.toFixed(0)}ms`);
+        log(callbacks, `Estimated time saved: ~${Math.floor(estimatedTimeSaved / 1000)}s`);
+      }
 
       callbacks?.onComplete?.(result);
       return result;

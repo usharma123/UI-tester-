@@ -118,6 +118,14 @@ export interface LLMNavigatorConfig {
   maxRetries: number;
   /** Timeout for LLM API calls in ms */
   timeoutMs: number;
+  /** Whether to use heuristic-first decision making */
+  enableHeuristicFirst: boolean;
+  /** Confidence threshold for accepting heuristic decisions (0-100) */
+  heuristicConfidenceThreshold: number;
+  /** Maximum timeout for AI calls in ms */
+  maxAITimeout: number;
+  /** Maximum retries for AI calls */
+  maxAIRetries: number;
 }
 
 export const DEFAULT_LLM_NAVIGATOR_CONFIG: LLMNavigatorConfig = {
@@ -128,11 +136,22 @@ export const DEFAULT_LLM_NAVIGATOR_CONFIG: LLMNavigatorConfig = {
   smartInteractions: true,
   maxRetries: 2,
   timeoutMs: 30000,
+  enableHeuristicFirst: true,
+  heuristicConfidenceThreshold: 75,
+  maxAITimeout: 10000,
+  maxAIRetries: 1,
 };
 
 // ============================================================================
 // Decision Engine Interface
 // ============================================================================
+
+export interface DecisionEngineStats {
+  heuristicDecisions: number;
+  aiEscalations: number;
+  failures: number;
+  totalDecisions: number;
+}
 
 export interface DecisionEngine {
   /** Select the next action to take based on current state */
@@ -141,6 +160,8 @@ export interface DecisionEngine {
   generateSmartInteraction(request: SmartInteractionRequest): Promise<SmartInteractionResponse>;
   /** Get the configuration */
   getConfig(): LLMNavigatorConfig;
+  /** Get decision statistics */
+  getStats(): DecisionEngineStats;
 }
 
 export interface LLMDecisionResult {
@@ -154,6 +175,40 @@ export interface LLMDecisionResult {
   exhaustedReason?: string;
   /** Interaction hint for the top action */
   interactionHint?: string;
+}
+
+// ============================================================================
+// Heuristic Decision Types
+// ============================================================================
+
+export type HeuristicDecision = "select_action" | "backtrack" | "uncertain";
+
+export interface HeuristicResult {
+  /** Decision made by heuristic */
+  decision: HeuristicDecision;
+  /** Selected edge ID if decision is 'select_action' */
+  selectedEdge?: string;
+  /** Confidence level 0-100 */
+  confidence: number;
+  /** Reasoning for this decision */
+  reason: string;
+  /** Additional metadata about the decision */
+  metadata?: {
+    scoreRatio?: number;
+    candidateCount?: number;
+    matchedPattern?: string;
+  };
+}
+
+export interface FailureRecord {
+  /** Node ID where failure occurred */
+  nodeId: string;
+  /** Approaches attempted before failure */
+  attemptedApproaches: ("heuristic" | "ai")[];
+  /** Reason for failure */
+  reason: string;
+  /** Timestamp of failure */
+  timestamp: number;
 }
 
 // ============================================================================

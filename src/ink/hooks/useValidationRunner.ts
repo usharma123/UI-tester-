@@ -5,6 +5,7 @@
 import { useState, useCallback, useRef } from "react";
 import { runValidation, type ValidationRunOptions } from "../../validation/run-validation.js";
 import type { ValidationConfig } from "../../validation/types.js";
+import { loadValidationConfig } from "../../validation/config.js";
 import type { SSEEvent } from "../../qa/progress-types.js";
 
 type EventHandler = (event: SSEEvent) => void;
@@ -32,19 +33,7 @@ export function useValidationRunner(onEvent: EventHandler): UseValidationRunnerR
 
       try {
         // Build config from environment
-        const config: ValidationConfig = {
-          specFile,
-          url,
-          outputDir,
-          openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
-          openRouterModel: process.env.OPENROUTER_MODEL || "anthropic/claude-sonnet-4",
-          maxPages: parseInt(process.env.MAX_PAGES || "50", 10),
-          stepsPerPage: parseInt(process.env.STEPS_PER_PAGE || "5", 10),
-          parallelBrowsers: parseInt(process.env.PARALLEL_BROWSERS || "5", 10),
-          browserTimeout: parseInt(process.env.BROWSER_TIMEOUT || "60000", 10),
-          navigationTimeout: parseInt(process.env.NAVIGATION_TIMEOUT || "45000", 10),
-          actionTimeout: parseInt(process.env.ACTION_TIMEOUT || "15000", 10),
-        };
+        const config: ValidationConfig = loadValidationConfig({ specFile, url, outputDir });
 
         if (!config.openRouterApiKey) {
           throw new Error("OPENROUTER_API_KEY is required");

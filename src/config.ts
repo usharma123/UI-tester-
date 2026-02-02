@@ -74,6 +74,18 @@ export interface LLMNavigatorConfig {
   maxLLMCallsPerStep: number;
   /** Whether to use smart interactions for search/forms */
   smartInteractions: boolean;
+  /** Maximum retries for LLM API calls (default: 2) */
+  maxRetries: number;
+  /** Timeout for LLM API calls in ms (default: 30000) */
+  timeoutMs: number;
+  /** Whether to use heuristic-first decision making (default: true) */
+  enableHeuristicFirst: boolean;
+  /** Confidence threshold for accepting heuristic decisions (0-100, default: 75) */
+  heuristicConfidenceThreshold: number;
+  /** Maximum timeout for AI fallback calls in ms (default: 10000) */
+  maxAITimeout: number;
+  /** Maximum retries for AI fallback calls (default: 1) */
+  maxAIRetries: number;
 }
 
 // ============================================================================
@@ -124,6 +136,12 @@ const DEFAULT_LLM_NAVIGATOR_CONFIG: LLMNavigatorConfig = {
   temperature: 0.3,
   maxLLMCallsPerStep: 2,
   smartInteractions: true,
+  maxRetries: 2,
+  timeoutMs: 30000,
+  enableHeuristicFirst: true,
+  heuristicConfidenceThreshold: 75,
+  maxAITimeout: 10000,
+  maxAIRetries: 1,
 };
 
 const DEFAULT_CONFIG = {
@@ -204,6 +222,12 @@ function parseLLMNavigatorConfig(env: NodeJS.ProcessEnv): LLMNavigatorConfig {
     temperature: parseFloat(env.LLM_NAVIGATOR_TEMPERATURE ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.temperature)),
     maxLLMCallsPerStep: parseInt(env.LLM_MAX_CALLS_PER_STEP ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.maxLLMCallsPerStep), 10),
     smartInteractions: parseBoolean(env.LLM_SMART_INTERACTIONS, DEFAULT_LLM_NAVIGATOR_CONFIG.smartInteractions),
+    maxRetries: parseInt(env.LLM_MAX_RETRIES ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.maxRetries), 10),
+    timeoutMs: parseInt(env.LLM_TIMEOUT_MS ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.timeoutMs), 10),
+    enableHeuristicFirst: parseBoolean(env.LLM_HEURISTIC_FIRST, DEFAULT_LLM_NAVIGATOR_CONFIG.enableHeuristicFirst),
+    heuristicConfidenceThreshold: parseInt(env.LLM_HEURISTIC_THRESHOLD ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.heuristicConfidenceThreshold), 10),
+    maxAITimeout: parseInt(env.LLM_AI_TIMEOUT ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.maxAITimeout), 10),
+    maxAIRetries: parseInt(env.LLM_AI_RETRIES ?? String(DEFAULT_LLM_NAVIGATOR_CONFIG.maxAIRetries), 10),
   };
 }
 

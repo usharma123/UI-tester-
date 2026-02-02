@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { AgentBrowser } from "../agentBrowser.js";
 import type { Plan, Step, Evidence, ExecutedStep, SnapshotEntry, ErrorEntry } from "./types.js";
 import { ensureDir } from "../utils/fs.js";
+import { shouldScreenshotAfter, shouldScreenshotBefore, shouldSnapshotAfter } from "./steps/screenshot-policy.js";
 
 const isDebug = process.env.DEBUG === "true";
 
@@ -10,22 +11,6 @@ export interface ExecutorOptions {
   maxSteps: number;
   strictMode?: boolean;
   captureBeforeAfterScreenshots?: boolean;
-}
-
-function shouldSnapshotAfter(stepType: string): boolean {
-  return ["click", "fill", "press"].includes(stepType);
-}
-
-function shouldScreenshotBefore(stepType: string, captureBeforeAfter: boolean): boolean {
-  if (!captureBeforeAfter) return false;
-  return ["click", "fill", "press"].includes(stepType);
-}
-
-function shouldScreenshotAfter(stepType: string, captureBeforeAfter: boolean): boolean {
-  if (captureBeforeAfter) {
-    return ["click", "open", "fill", "press"].includes(stepType);
-  }
-  return ["click", "open"].includes(stepType);
 }
 
 export async function executePlan(

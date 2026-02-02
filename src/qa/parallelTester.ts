@@ -6,6 +6,10 @@ import type { SitemapUrl, PageStatus } from "./progress-types.js";
 import type { Step, ExecutedStep, SnapshotEntry, ErrorEntry, AuditEntry } from "./types.js";
 import { createPagePlan } from "./planner.js";
 import { runDomAudit } from "./audits.js";
+import { executeStep } from "./steps/execute-step.js";
+import { isBlockingError, isMultipleMatchError, isSkippableError } from "./steps/error-classifier.js";
+import { shouldScreenshotAfter, shouldScreenshotBefore, shouldSnapshotAfter } from "./steps/screenshot-policy.js";
+import { makeFirstSelector } from "./steps/selector-utils.js";
 
 export interface PageTestResult {
   url: string;
@@ -30,50 +34,6 @@ export interface ParallelTestCallbacks {
   uploadScreenshot: (localPath: string, stepIndex: number, label: string) => Promise<string>;
 }
 
-// Check if step type should trigger screenshot
-function shouldScreenshotBefore(stepType: string, captureBeforeAfter: boolean): boolean {
-  if (!captureBeforeAfter) return false;
-  return ["click", "fill", "press"].includes(stepType);
-}
-
-function shouldScreenshotAfter(stepType: string, captureBeforeAfter: boolean): boolean {
-  if (captureBeforeAfter) {
-    return ["click", "open", "fill", "press"].includes(stepType);
-  }
-  return ["click", "open"].includes(stepType);
-}
-
-function shouldSnapshotAfter(stepType: string): boolean {
-  return ["click", "fill", "press"].includes(stepType);
-}
-
-// Check if error should block execution
-function isBlockingError(error: string): boolean {
-  const blockingPatterns = [
-    "crashed",
-    "disconnected",
-    "target closed",
-    "session closed",
-    "browser has been closed",
-    "protocol error",
-  ];
-  const lowerError = error.toLowerCase();
-  return blockingPatterns.some((pattern) => lowerError.includes(pattern));
-}
-
-function isSkippableError(error: string): boolean {
-  const skippablePatterns = [
-    "timeout",
-    "navigation failed",
-    "net::",
-    "err_connection",
-    "element not found",
-    "no element matches",
-  ];
-  const lowerError = error.toLowerCase();
-  return skippablePatterns.some((pattern) => lowerError.includes(pattern));
-}
-
 function slugify(url: string): string {
   try {
     const parsed = new URL(url);
@@ -81,86 +41,6 @@ function slugify(url: string): string {
     return path || "home";
   } catch {
     return "page";
-  }
-}
-
-// Check if error is due to multiple elements matching
-function isMultipleMatchError(error: string): { matched: boolean; count?: number; selector?: string } {
-  const cleanError = error.replace(/\x1b\[[0-9;]*m/g, "").replace(/\[[\d;]*m/g, "");
-  const match = cleanError.match(/Selector "([^"]+)" matched (\d+) elements/);
-  if (match) {
-    return { matched: true, selector: match[1], count: parseInt(match[2], 10) };
-  }
-  return { matched: false };
-}
-
-function makeFirstSelector(selector: string): string {
-  if (selector.startsWith("text=") || selector.startsWith("text:")) {
-    return `${selector} >> nth=0`;
-  }
-  if (selector.startsWith("a:") || selector.includes(":has-text")) {
-    return `${selector} >> nth=0`;
-  }
-  if (selector.includes(" ") || selector.includes(">")) {
-    return `${selector}:first-of-type`;
-  }
-  return `${selector} >> nth=0`;
-}
-
-async function executeStep(
-  browser: AgentBrowser,
-  step: Step,
-  screenshotDir: string,
-  stepIndex: number
-): Promise<string | undefined> {
-  switch (step.type) {
-    case "open":
-      if (!step.selector) {
-        throw new Error("open step requires a URL in selector field");
-      }
-      await browser.open(step.selector);
-      return `Opened ${step.selector}`;
-
-    case "snapshot":
-      const snapshot = await browser.snapshot();
-      return `Snapshot captured (${snapshot.length} chars)`;
-
-    case "click":
-      if (!step.selector) {
-        throw new Error("click step requires selector");
-      }
-      await browser.click(step.selector);
-      return `Clicked ${step.selector}`;
-
-    case "fill":
-      if (!step.selector || !step.text) {
-        throw new Error("fill step requires selector and text");
-      }
-      await browser.fill(step.selector, step.text);
-      return `Filled ${step.selector} with "${step.text}"`;
-
-    case "press":
-      if (!step.key) {
-        throw new Error("press step requires key");
-      }
-      await browser.press(step.key);
-      return `Pressed ${step.key}`;
-
-    case "getText":
-      if (!step.selector) {
-        throw new Error("getText step requires selector");
-      }
-      const text = await browser.getText(step.selector);
-      return `Text: ${text}`;
-
-    case "screenshot":
-      const filename = step.path || `step-${String(stepIndex).padStart(2, "0")}.png`;
-      const filepath = join(screenshotDir, filename);
-      await browser.screenshot(filepath);
-      return `Screenshot saved to ${filepath}`;
-
-    default:
-      throw new Error(`Unknown step type: ${(step as Step).type}`);
   }
 }
 

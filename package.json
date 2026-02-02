@@ -17,6 +17,7 @@
   },
   "scripts": {
     "start": "bun run src/cli-ink.tsx",
+    "qa": "bun run src/cli-ink.tsx",
     "dev": "bun run --watch src/cli-ink.tsx",
     "build": "bun build src/cli-ink.tsx --outdir dist --target node --packages external && chmod +x dist/cli-ink.js",
     "prepublishOnly": "bun run build",

@@ -5,7 +5,7 @@
  */
 
 import type { GraphEdge, GraphNode } from "../graph/types.js";
-import type { CoverageContext, ExplorationHistoryEntry, SmartInteractionRequest } from "./types.js";
+import type { CoverageContext, ExplorationHistoryEntry, SmartInteractionRequest, HeuristicResult } from "./types.js";
 
 // ============================================================================
 // Action Selection Prompts
@@ -232,6 +232,74 @@ export function buildActionSelectionMessages(
   return {
     system: ACTION_SELECTION_SYSTEM_PROMPT,
     user: buildActionSelectionPrompt(node, pendingEdges, exploredEdges, coverage, recentHistory),
+  };
+}
+
+/**
+ * Build a compact action selection prompt for AI fallback
+ * Reduces context size by:
+ * - Limiting to top N candidates only
+ * - Truncating DOM summary
+ * - Including heuristic hint as context
+ */
+export function buildCompactActionSelectionPrompt(
+  node: GraphNode,
+  topCandidates: GraphEdge[],
+  heuristicHint: HeuristicResult,
+  coverage: CoverageContext
+): string {
+  // Truncate DOM summary to first 20 elements
+  const domLines = node.domSummary.split("\n").slice(0, 20);
+  const truncatedDom = domLines.join("\n");
+
+  return `You are exploring a website to discover all pages and test all interactive elements.
+
+CURRENT PAGE:
+  URL: ${node.url}
+  Title: ${node.title}
+
+PAGE ELEMENTS (top 20):
+${truncatedDom}
+
+TOP ACTION CANDIDATES (${topCandidates.length}):
+${formatEdgesForPrompt(topCandidates, 5)}
+
+HEURISTIC ANALYSIS:
+  Decision: ${heuristicHint.decision}
+  Confidence: ${heuristicHint.confidence}%
+  Reason: ${heuristicHint.reason}
+  ${heuristicHint.selectedEdge ? `Suggested: ${heuristicHint.selectedEdge}` : ""}
+
+COVERAGE:
+  URLs: ${coverage.urlCount} | Forms: ${coverage.formCount} | Steps: ${coverage.totalSteps}
+
+TASK: Choose the best action from the candidates above. The heuristic was uncertain, so use your judgment to pick the most valuable action.
+
+Respond with valid JSON:
+{
+  "decisions": [
+    {
+      "actionId": "<edge_id>",
+      "priority": <1-10>,
+      "rationale": "<brief reason>",
+      "interactionHint": "<optional: value for search/form fields>"
+    }
+  ],
+  "branchExhausted": false
+}
+
+Include only the top action (the heuristic already ranked them).`;
+}
+
+export function buildCompactActionSelectionMessages(
+  node: GraphNode,
+  topCandidates: GraphEdge[],
+  heuristicHint: HeuristicResult,
+  coverage: CoverageContext
+): ActionSelectionMessages {
+  return {
+    system: ACTION_SELECTION_SYSTEM_PROMPT,
+    user: buildCompactActionSelectionPrompt(node, topCandidates, heuristicHint, coverage),
   };
 }
 
