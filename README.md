@@ -251,6 +251,8 @@ reports/
 ├── src/
 │   ├── cli-ink.tsx         # TUI entry point
 │   ├── config.ts           # Configuration management
+│   ├── core/               # Shared cross-cutting utilities
+│   │   └── events/         # Event emit helpers
 │   ├── agentBrowser.ts     # Browser automation wrapper
 │   ├── ink/                # TUI components
 │   │   ├── App.tsx         # Main TUI application (test mode)
@@ -266,22 +268,30 @@ reports/
 │   │   │   ├── RubricDisplay.tsx
 │   │   │   ├── TraceabilityReport.tsx
 │   │   │   └── ValidationProgress.tsx
-│   │   └── hooks/
-│   │       ├── useQARunner.ts
-│   │       └── useValidationRunner.ts
+│   │   ├── hooks/
+│   │   │   ├── useQARunner.ts
+│   │   │   └── useValidationRunner.ts
+│   │   └── state/          # Reducers + event-to-state mapping
+│   │       ├── app-state.ts
+│   │       └── validation-state.ts
 │   ├── qa/                 # QA core logic
 │   │   ├── planner.ts      # Test plan generation
 │   │   ├── executor.ts     # Test execution
 │   │   ├── judge.ts        # Result evaluation
 │   │   ├── run-streaming.ts # Streaming run orchestrator
 │   │   ├── parallelTester.ts # Parallel page testing
+│   │   ├── phases/         # QA phase implementations (init, discovery, planning, traversal, execution, evaluation)
+│   │   ├── steps/          # Shared step helpers (execution, selectors, errors, screenshots)
 │   │   └── types.ts        # Type definitions
 │   ├── validation/         # Validation feature
 │   │   ├── run-validation.ts # Validation orchestrator
+│   │   ├── config.ts        # Validation config loader
+│   │   ├── qa-config.ts     # Shared QA config builder for validation
 │   │   ├── extractor.ts    # Requirement extraction
 │   │   ├── rubric-generator.ts # Rubric generation
 │   │   ├── cross-validator.ts # Cross-validation
 │   │   ├── traceability.ts # Report generation
+│   │   ├── phases/         # Validation phase implementations
 │   │   ├── parsers/        # Document parsers
 │   │   └── types.ts        # Validation types
 │   ├── prompts/            # LLM prompts
@@ -303,6 +313,10 @@ reports/
 ├── .ui-qa-runs/           # Generated results (gitignored)
 └── package.json
 ```
+
+Notes:
+- The QA and validation runners are now thin orchestrators; the phase logic lives in `src/qa/phases/` and `src/validation/phases/`.
+- Shared step behavior (selectors, retries, screenshot policy) is centralized in `src/qa/steps/`.
 
 ## Architecture
 
