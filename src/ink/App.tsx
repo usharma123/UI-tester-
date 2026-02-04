@@ -12,6 +12,7 @@ import { ProgressBar } from "./components/ProgressBar.js";
 import { LogStream } from "./components/LogStream.js";
 import { ResultsSummary } from "./components/ResultsSummary.js";
 import { SitemapDisplay } from "./components/SitemapDisplay.js";
+import { ScenarioList } from "./components/ScenarioList.js";
 import { UpdateNotification } from "./components/UpdateNotification.js";
 import { useQARunner } from "./hooks/useQARunner.js";
 import { appReducer, LOG_LINES } from "./state/app-state.js";
@@ -154,11 +155,18 @@ export function App({ initialUrl, initialGoals, updateInfo, jsonLogs }: AppProps
           {state.totalScenarios > 0 && (
             <Box marginTop={1}>
               <ProgressBar
-                value={state.scenarios.filter((s) => s.status !== "running").length}
+                value={state.scenarios.filter((s) => s.status === "success" || s.status === "failed").length}
                 total={state.totalScenarios}
                 label="Scenarios"
               />
             </Box>
+          )}
+
+          {state.scenarios.length > 0 && (
+            <ScenarioList
+              scenarios={state.scenarios}
+              maxHeight={Math.min(15, Math.floor((terminalHeight - HEADER_HEIGHT - PADDING) / 3))}
+            />
           )}
 
           <TaskList tasks={state.tasks} />

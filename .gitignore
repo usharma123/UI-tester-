@@ -31,3 +31,6 @@ npm-debug.log*
 
 # Build artifacts
 public-react/
+
+# npm token (contains sensitive access token)
+.npmrc

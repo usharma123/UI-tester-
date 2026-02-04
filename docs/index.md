@@ -60,24 +60,24 @@ Processes websites through four phases:
 
 | Phase | Description |
 |-------|-------------|
-| Discovery | Identifies pages via sitemap or link crawling |
-| Analysis | Generates LLM test scenarios for each page |
-| Execution | Runs scenarios with browser automation |
-| Evaluation | Produces scored reports with findings |
+| Discovery | Identifies pages via sitemap.xml, robots.txt, or link crawling |
+| Analysis | LLM analyzes each page (DOM + screenshot) to generate test scenarios |
+| Execution | Runs scenarios concurrently using Playwright with real browser automation |
+| Evaluation | LLM evaluates evidence and produces scored reports with categorized issues |
 
 ### Validation Mode
 Validates websites against specification documents through eight phases:
 
 | Phase | Description |
 |-------|-------------|
-| Parsing | Parses specification document (markdown) |
-| Extraction | Extracts testable requirements using LLM |
-| Rubric | Generates evaluation rubric with pass/fail conditions |
-| Discovery | Discovers site structure |
-| Planning | Creates requirement-linked test plan |
-| Execution | Runs tests with browser automation |
-| Cross-Validation | Validates results against requirements |
-| Reporting | Generates traceability report |
+| Parsing | Parses specification document (markdown format) |
+| Extraction | Extracts testable requirements using LLM with MoSCoW priorities |
+| Rubric | Generates evaluation rubric with pass/fail conditions and weights |
+| Discovery | Discovers site structure (same as test mode) |
+| Planning | Creates requirement-linked test plan mapping requirements to pages |
+| Execution | Runs tests with browser automation and captures evidence |
+| Cross-Validation | Validates test results against requirements and rubric criteria |
+| Reporting | Generates traceability report linking requirements to evidence |
 
 ## Output
 

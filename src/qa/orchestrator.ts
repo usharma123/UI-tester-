@@ -5,20 +5,20 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Config } from "../config.js";
-import type { AgentBrowser } from "../agentBrowser.js";
 import type { TestScenario, TestResult, Report, Evidence, QAReport } from "./types.js";
 import type { ProgressCallback } from "./progress-types.js";
 import type { LLMClient } from "./llm.js";
-import type { SitemapResult } from "../utils/sitemap.js";
 import { createAgentBrowser } from "../agentBrowser.js";
 import { createLLMClient } from "./llm.js";
-import { analyzePage } from "./analyzer.js";
+import { capturePage, analyzeCapture } from "./analyzer.js";
+import type { PageCapture } from "./analyzer.js";
 import { runScenario } from "./agent.js";
 import { generateReport } from "./reporter.js";
 import { runDiscoveryPhase } from "./phases/discovery.js";
 import { emit, emitPhaseStart, emitPhaseComplete } from "../core/events/emit.js";
 import { ensureDir } from "../utils/fs.js";
 import { getTimestamp } from "../utils/time.js";
+import { createBrowserPool } from "../utils/browserPool.js";
 import * as localStorage from "../storage/local.js";
 
 export interface PipelineOptions {
@@ -79,31 +79,64 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
 
     const allScenarios: TestScenario[] = [];
 
+    // Phase 2a: Capture all pages sequentially with single browser (~1s each)
+    const captures: PageCapture[] = [];
     for (let i = 0; i < pageUrls.length; i++) {
       const pageUrl = pageUrls[i];
       emit(onProgress, {
         type: "log",
-        message: `Analyzing page ${i + 1}/${pageUrls.length}: ${pageUrl}`,
+        message: `Capturing page ${i + 1}/${pageUrls.length}: ${pageUrl}`,
         level: "info",
       });
 
       try {
-        const scenarios = await analyzePage({
+        const capture = await capturePage({
           browser,
           url: pageUrl,
-          llm,
           screenshotDir,
-          maxScenarios: config.maxScenariosPerPage,
           goals,
         });
-        allScenarios.push(...scenarios);
+        captures.push(capture);
       } catch (err) {
         emit(onProgress, {
           type: "log",
-          message: `Failed to analyze ${pageUrl}: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Failed to capture ${pageUrl}: ${err instanceof Error ? err.message : String(err)}`,
           level: "warn",
         });
       }
+    }
+
+    // Close browser early — no longer needed for LLM analysis
+    try { await browser.close(); } catch { /* ignore */ }
+
+    // Phase 2b: Fire all LLM analysis calls in parallel
+    emit(onProgress, {
+      type: "log",
+      message: `Analyzing ${captures.length} pages in parallel...`,
+      level: "info",
+    });
+
+    const analysisResults = await Promise.all(
+      captures.map(async (capture) => {
+        try {
+          return await analyzeCapture({
+            capture,
+            llm,
+            maxScenarios: config.maxScenariosPerPage,
+          });
+        } catch (err) {
+          emit(onProgress, {
+            type: "log",
+            message: `Failed to analyze ${capture.url}: ${err instanceof Error ? err.message : String(err)}`,
+            level: "warn",
+          });
+          return [];
+        }
+      })
+    );
+
+    for (const scenarios of analysisResults) {
+      allScenarios.push(...scenarios);
     }
 
     // Deduplicate scenarios - global scenarios only run once, page scenarios run per-page
@@ -120,7 +153,8 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
       type: "scenarios_generated",
       totalScenarios: deduplicatedScenarios.length,
       totalPages: pageUrls.length,
-    } as any);
+      scenarios: deduplicatedScenarios.map(s => ({ id: s.id, title: s.title })),
+    });
 
     emitPhaseComplete(onProgress, "analysis");
     
@@ -134,106 +168,102 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
     emit(onProgress, { type: "log", message: "Running test scenarios...", level: "info" });
 
     const results: TestResult[] = [];
-    const scenarioBrowsers: AgentBrowser[] = [];
 
-    // Run scenarios — use parallel browsers for concurrency
+    // Run scenarios — use browser pool for concurrency
     const concurrency = Math.min(config.parallelBrowsers, scenariosToRun.length);
+    const pool = createBrowserPool(concurrency, {
+      timeout: config.browserTimeout,
+      navigationTimeout: config.navigationTimeout,
+      actionTimeout: config.actionTimeout,
+      maxRetries: config.maxRetries,
+      retryDelayMs: config.retryDelayMs,
+      debug: process.env.DEBUG === "true",
+      headless: config.headless,
+    });
 
-    // Simple batched execution
-    for (let batch = 0; batch < scenariosToRun.length; batch += concurrency) {
-      const batchScenarios = scenariosToRun.slice(batch, batch + concurrency);
+    try {
+      // All scenario promises start immediately; pool limits concurrency
+      const scenarioPromises = scenariosToRun.map(async (scenario, globalIdx) => {
+        const pooled = await pool.acquire();
 
-      const batchResults = await Promise.all(
-        batchScenarios.map(async (scenario, idx) => {
-          const scenarioBrowser = createAgentBrowser({
-            timeout: config.browserTimeout,
-            navigationTimeout: config.navigationTimeout,
-            actionTimeout: config.actionTimeout,
-            maxRetries: config.maxRetries,
-            retryDelayMs: config.retryDelayMs,
-            debug: process.env.DEBUG === "true",
-            headless: config.headless,
+        emit(onProgress, {
+          type: "scenario_start",
+          scenarioId: scenario.id,
+          title: scenario.title,
+          index: globalIdx,
+          total: scenariosToRun.length,
+        });
+
+        try {
+          const result = await runScenario({
+            browser: pooled.browser,
+            scenario,
+            llm,
+            screenshotDir,
+            onStep: (step) => {
+              const errorSuffix = step.error ? ` — ${step.error}` : "";
+              emit(onProgress, {
+                type: "log",
+                message: `  [${scenario.id}] Step ${step.index}: ${step.action.type}${step.action.selector ? ` ${step.action.selector}` : ""} → ${step.success ? "OK" : "FAIL"}${errorSuffix}`,
+                level: step.success ? "info" : "warn",
+              });
+            },
           });
-          scenarioBrowsers.push(scenarioBrowser);
 
-          const globalIdx = batch + idx;
           emit(onProgress, {
-            type: "scenario_start",
+            type: "scenario_complete",
             scenarioId: scenario.id,
-            title: scenario.title,
+            status: result.status,
             index: globalIdx,
             total: scenariosToRun.length,
-          } as any);
+          });
 
-          try {
-            const result = await runScenario({
-              browser: scenarioBrowser,
-              scenario,
-              llm,
-              screenshotDir,
-              onStep: (step) => {
-                const errorSuffix = step.error ? ` — ${step.error}` : "";
-                emit(onProgress, {
-                  type: "log",
-                  message: `  [${scenario.id}] Step ${step.index}: ${step.action.type}${step.action.selector ? ` ${step.action.selector}` : ""} → ${step.success ? "OK" : "FAIL"}${errorSuffix}`,
-                  level: step.success ? "info" : "warn",
-                });
-              },
-            });
-
-            emit(onProgress, {
-              type: "scenario_complete",
-              scenarioId: scenario.id,
-              status: result.status,
-              index: globalIdx,
-              total: scenariosToRun.length,
-            } as any);
-
-            // Save screenshots
-            for (const path of result.evidence.screenshots) {
-              try {
-                const { localPath } = await localStorage.saveLocalScreenshot(
-                  runId,
-                  path,
-                  result.steps.findIndex((s) => s.screenshotPath === path),
-                  `${scenario.id}`
-                );
-                screenshotUrlMap[path] = localPath;
-              } catch {
-                // Ignore screenshot save errors
-              }
+          // Save screenshots
+          for (const path of result.evidence.screenshots) {
+            try {
+              const { localPath } = await localStorage.saveLocalScreenshot(
+                runId,
+                path,
+                result.steps.findIndex((s) => s.screenshotPath === path),
+                `${scenario.id}`
+              );
+              screenshotUrlMap[path] = localPath;
+            } catch {
+              // Ignore screenshot save errors
             }
-
-            return result;
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            emit(onProgress, {
-              type: "scenario_complete",
-              scenarioId: scenario.id,
-              status: "error",
-              index: globalIdx,
-              total: scenariosToRun.length,
-            } as any);
-            emit(onProgress, {
-              type: "log",
-              message: `  [${scenario.id}] Scenario error: ${errorMessage}`,
-              level: "warn",
-            });
-            return {
-              scenario,
-              status: "error" as const,
-              steps: [],
-              summary: `Scenario failed: ${errorMessage}`,
-              evidence: { screenshots: [] },
-              durationMs: 0,
-            } satisfies TestResult;
-          } finally {
-            try { await scenarioBrowser.close(); } catch { /* ignore */ }
           }
-        })
-      );
 
-      results.push(...batchResults);
+          return result;
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          emit(onProgress, {
+            type: "scenario_complete",
+            scenarioId: scenario.id,
+            status: "error",
+            index: globalIdx,
+            total: scenariosToRun.length,
+          });
+          emit(onProgress, {
+            type: "log",
+            message: `  [${scenario.id}] Scenario error: ${errorMessage}`,
+            level: "warn",
+          });
+          return {
+            scenario,
+            status: "error" as const,
+            steps: [],
+            summary: `Scenario failed: ${errorMessage}`,
+            evidence: { screenshots: [] },
+            durationMs: 0,
+          } satisfies TestResult;
+        } finally {
+          pool.release(pooled.id);
+        }
+      });
+
+      results.push(...await Promise.all(scenarioPromises));
+    } finally {
+      await pool.closeAll();
     }
 
     const passed = results.filter((r) => r.status === "pass").length;

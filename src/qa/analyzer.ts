@@ -18,10 +18,23 @@ export interface AnalyzePageOptions {
   goals?: string;
 }
 
-export async function analyzePage(options: AnalyzePageOptions): Promise<TestScenario[]> {
-  const { browser, url, llm, screenshotDir, maxScenarios, goals } = options;
+/** Captured page data (browser-dependent, fast ~1s) */
+export interface PageCapture {
+  url: string;
+  screenshotBase64: string;
+  domSnapshot: string;
+  goals?: string;
+}
 
-  // Navigate and capture state
+/** Capture page state: navigate, screenshot, DOM snapshot */
+export async function capturePage(options: {
+  browser: AgentBrowser;
+  url: string;
+  screenshotDir: string;
+  goals?: string;
+}): Promise<PageCapture> {
+  const { browser, url, screenshotDir, goals } = options;
+
   await browser.open(url);
   await browser.waitForStability();
 
@@ -30,7 +43,6 @@ export async function analyzePage(options: AnalyzePageOptions): Promise<TestScen
 
   const domSnapshot = await browser.snapshot();
 
-  // Read screenshot for vision
   let screenshotBase64: string;
   try {
     const buffer = await readFile(screenshotPath);
@@ -38,6 +50,18 @@ export async function analyzePage(options: AnalyzePageOptions): Promise<TestScen
   } catch {
     screenshotBase64 = "";
   }
+
+  return { url, screenshotBase64, domSnapshot, goals };
+}
+
+/** Analyze captured page data via LLM (no browser needed, slow ~5-10s) */
+export async function analyzeCapture(options: {
+  capture: PageCapture;
+  llm: LLMClient;
+  maxScenarios: number;
+}): Promise<TestScenario[]> {
+  const { capture, llm, maxScenarios } = options;
+  const { url, screenshotBase64, domSnapshot, goals } = capture;
 
   const userPrompt = buildAnalyzerPrompt(url, domSnapshot, goals);
   const messages: LLMMessage[] = [
@@ -67,7 +91,6 @@ export async function analyzePage(options: AnalyzePageOptions): Promise<TestScen
     return [];
   }
 
-  // Attach the URL and limit count
   return parsed.scenarios.slice(0, maxScenarios).map((s) => ({
     id: s.id || `scenario-${Math.random().toString(36).slice(2, 8)}`,
     title: s.title || "Untitled scenario",
@@ -75,15 +98,23 @@ export async function analyzePage(options: AnalyzePageOptions): Promise<TestScen
     startUrl: url,
     priority: s.priority || "medium",
     category: s.category || "interaction",
-    maxSteps: Math.min(s.maxSteps || 6, 8), // Cap at 8 steps max for efficiency
+    maxSteps: Math.min(s.maxSteps || 6, 8),
     scope: s.scope || inferScope(s.id || "", s.title || "", s.category || "interaction"),
   }));
 }
 
+/** Full analyze: capture + LLM analysis (convenience wrapper) */
+export async function analyzePage(options: AnalyzePageOptions): Promise<TestScenario[]> {
+  const { browser, url, llm, screenshotDir, maxScenarios, goals } = options;
+
+  const capture = await capturePage({ browser, url, screenshotDir, goals });
+  return analyzeCapture({ capture, llm, maxScenarios });
+}
+
 /** Infer scope based on scenario characteristics */
 function inferScope(
-  id: string, 
-  title: string, 
+  id: string,
+  title: string,
   category: string
 ): "global" | "page" {
   const globalPatterns = [
@@ -91,18 +122,18 @@ function inferScope(
     /navigation/i, /nav\s*menu/i, /header/i, /footer/i,
     /login/i, /logout/i, /auth/i, /sign\s*in/i, /sign\s*out/i,
   ];
-  
+
   const text = `${id} ${title}`;
   for (const pattern of globalPatterns) {
     if (pattern.test(text)) {
       return "global";
     }
   }
-  
+
   // Navigation category is typically global
   if (category === "navigation" && /menu|header|footer/i.test(text)) {
     return "global";
   }
-  
+
   return "page";
 }

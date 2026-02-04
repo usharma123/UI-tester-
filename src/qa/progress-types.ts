@@ -65,11 +65,18 @@ export interface ScenarioCompleteEvent extends SSEEventBase {
   total: number;
 }
 
+// Scenario info for todo list
+export interface ScenarioInfo {
+  id: string;
+  title: string;
+}
+
 // Scenarios generated after analysis
 export interface ScenariosGeneratedEvent extends SSEEventBase {
   type: "scenarios_generated";
   totalScenarios: number;
   totalPages: number;
+  scenarios: ScenarioInfo[];
 }
 
 // Run completed successfully

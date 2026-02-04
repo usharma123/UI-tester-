@@ -107,20 +107,32 @@ export function processEvent(state: AppState, event: SSEEvent): AppState {
     }
 
     case "scenarios_generated": {
+      const pendingScenarios = event.scenarios.map((s, i) => ({
+        scenarioId: s.id,
+        title: s.title,
+        index: i,
+        status: "pending" as const,
+      }));
       return {
         ...state,
         totalScenarios: event.totalScenarios,
+        scenarios: pendingScenarios,
       };
     }
 
     case "scenario_start": {
       const newScenarios = [...state.scenarios];
-      newScenarios.push({
-        scenarioId: event.scenarioId,
-        title: event.title,
-        index: event.index,
-        status: "running",
-      });
+      const idx = newScenarios.findIndex((s) => s.scenarioId === event.scenarioId);
+      if (idx >= 0) {
+        newScenarios[idx] = { ...newScenarios[idx], status: "running" };
+      } else {
+        newScenarios.push({
+          scenarioId: event.scenarioId,
+          title: event.title,
+          index: event.index,
+          status: "running",
+        });
+      }
       return { ...state, scenarios: newScenarios };
     }
 
