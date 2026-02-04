@@ -34,6 +34,7 @@ export interface LocalRunData {
   report?: Report;
   evidence?: Evidence;
   error?: string;
+  eventsFile?: string;
   startedAt: number;
   completedAt?: number;
   screenshots: Array<{
@@ -58,6 +59,10 @@ export async function createLocalRun(runId: string, url: string, goals: string):
   };
 
   await writeFile(join(runDir, "run.json"), JSON.stringify(runData, null, 2));
+}
+
+export async function setLocalRunEventsFile(runId: string, eventsFile: string): Promise<void> {
+  await updateLocalRun(runId, { eventsFile });
 }
 
 // Get local run data

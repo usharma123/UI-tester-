@@ -21,6 +21,7 @@ interface ValidateAppProps {
   specFile: string;
   url: string;
   outputDir: string;
+  jsonLogs?: boolean;
 }
 
 
@@ -28,6 +29,7 @@ export function ValidateApp({
   specFile,
   url,
   outputDir,
+  jsonLogs,
 }: ValidateAppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -56,7 +58,7 @@ export function ValidateApp({
   }, []);
 
   // Validation runner hook
-  const { startRun, isRunning } = useValidationRunner(handleEvent);
+  const { startRun, isRunning } = useValidationRunner(handleEvent, { jsonLogs });
 
   // Start validation automatically
   useEffect(() => {

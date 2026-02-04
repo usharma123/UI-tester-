@@ -13,26 +13,26 @@ hero:
       link: https://github.com/usharma123/UI-tester-
 
 features:
-  - title: Intelligent Test Planning
-    details: Generates context-aware test plans by analyzing page structure and content
-  - title: Coverage-Guided Exploration
-    details: Advanced exploration engine with state fingerprinting and budget management
+  - title: Intelligent Scenario Generation
+    details: LLM generates test scenarios per page from DOM snapshots and screenshots
+  - title: Sitemap + Link Discovery
+    details: Finds pages via sitemap/robots.txt with link-crawling fallback
   - title: Real Browser Automation
-    details: Executes tests using Playwright with actual clicks, form inputs, and navigation
-  - title: Visual Audits
-    details: Fast browser-based heuristics detect overlapping elements, clipped text, and UI issues
+    details: Executes tests using Playwright with real clicks, fills, and navigation
+  - title: Parallel Scenario Execution
+    details: Runs scenarios concurrently across multiple browser instances
   - title: Business Logic Validation
-    details: Validates websites against specification documents with requirement traceability
-  - title: Multi-Viewport Testing
-    details: Tests desktop, tablet, and mobile viewports automatically with configurable sizes
-  - title: Auth Fixture Management
-    details: Save and reuse authentication states for testing authenticated areas
-  - title: Visual Documentation
-    details: Captures screenshots before and after each action for debugging and evidence
-  - title: Concurrent Execution
-    details: Tests multiple pages in parallel with configurable browser pool (1-10 instances)
-  - title: Comprehensive Reporting
-    details: Scored reports with categorized issues, reproduction steps, and fix recommendations
+    details: Validates websites against specifications with requirement traceability
+  - title: Screenshot Evidence
+    details: Captures screenshots for every step and issue
+  - title: Scored Reports + LLM Fix Guide
+    details: Generates a scored report and a plain-text fix guide for LLMs
+  - title: Local Run History
+    details: Stores runs in .ui-qa-runs with run.json, report.md, and screenshots
+  - title: TUI Progress + Logs
+    details: Live terminal UI with phases, progress bars, and log streaming
+  - title: Update Notifications
+    details: Checks for new versions and prompts when updates are available
 ---
 
 ## Quick Start
@@ -61,8 +61,8 @@ Processes websites through four phases:
 | Phase | Description |
 |-------|-------------|
 | Discovery | Identifies pages via sitemap or link crawling |
-| Planning | Generates test plans using LLM analysis |
-| Execution | Runs tests with browser automation |
+| Analysis | Generates LLM test scenarios for each page |
+| Execution | Runs scenarios with browser automation |
 | Evaluation | Produces scored reports with findings |
 
 ### Validation Mode
@@ -85,12 +85,11 @@ Validates websites against specification documents through eight phases:
 ┌─────────────────────────────────────────┐
 │  UI/UX QA Agent                         │
 ├─────────────────────────────────────────┤
-│  ✓ Init        → Browser ready          │
 │  ✓ Discovery   → Found 5 pages          │
-│  ✓ Planning    → 12 test steps          │
-│  ● Execution   → Running tests...       │
+│  ✓ Analysis    → 12 scenarios           │
+│  ● Execution   → Running scenarios...   │
 │  ○ Evaluation  → Pending                │
 └─────────────────────────────────────────┘
 ```
 
-Results include markdown reports, JSON data, and screenshots saved to `.ui-qa-runs/`.
+Results include markdown reports, run metadata, and screenshots saved to `.ui-qa-runs/`.

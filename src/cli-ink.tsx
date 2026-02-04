@@ -42,6 +42,7 @@ async function main() {
         specFile={parsed.specFile!}
         url={parsed.url!}
         outputDir={parsed.outputDir!}
+        jsonLogs={parsed.jsonLogs}
       />
     );
   } else {
@@ -50,6 +51,7 @@ async function main() {
         initialUrl={parsed.url}
         initialGoals={parsed.goals}
         updateInfo={updateInfo}
+        jsonLogs={parsed.jsonLogs}
       />
     );
   }

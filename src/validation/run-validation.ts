@@ -22,6 +22,8 @@ import { emit } from "../core/events/emit.js";
 
 export interface ValidationRunOptions {
   config: ValidationConfig;
+  runId?: string;
+  eventsFilePath?: string;
   onProgress: ProgressCallback;
 }
 
@@ -39,13 +41,16 @@ export async function runValidation(
 ): Promise<ValidationRunResult> {
   const { config, onProgress } = options;
   const timestamp = getTimestamp();
-  const runId = `validation-${Date.now()}`;
+  const runId = options.runId ?? `validation-${Date.now()}`;
 
   const screenshotDir = join(tmpdir(), `validation-screenshots-${timestamp}`);
   await ensureDir(screenshotDir);
   await ensureDir(config.outputDir);
 
   await localStorage.createLocalRun(runId, config.url, "validation");
+  if (options.eventsFilePath) {
+    await localStorage.setLocalRunEventsFile(runId, options.eventsFilePath);
+  }
 
   const testExecution: TestExecutionSummary = {
     pagesVisited: [],

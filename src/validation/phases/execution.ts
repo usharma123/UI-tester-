@@ -59,9 +59,10 @@ export async function runExecutionPhase(options: ExecutionPhaseOptions): Promise
             llm,
             screenshotDir,
             onStep: (step) => {
+              const errorSuffix = step.error ? ` — ${step.error}` : "";
               emit(onProgress, {
                 type: "log",
-                message: `  [${scenario.id}] Step ${step.index}: ${step.action.type}${step.action.selector ? ` ${step.action.selector}` : ""} → ${step.success ? "OK" : "FAIL"}`,
+                message: `  [${scenario.id}] Step ${step.index}: ${step.action.type}${step.action.selector ? ` ${step.action.selector}` : ""} → ${step.success ? "OK" : "FAIL"}${errorSuffix}`,
                 level: step.success ? "info" : "warn",
               });
             },

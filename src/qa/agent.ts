@@ -23,6 +23,10 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
   const steps: AgentStep[] = [];
   const screenshots: string[] = [];
   const history: Array<{ action: string; result: string }> = [];
+  const parsedMaxFailures = parseInt(process.env.MAX_CONSECUTIVE_FAILURES ?? "", 10);
+  const maxConsecutiveFailures =
+    Number.isFinite(parsedMaxFailures) && parsedMaxFailures > 0 ? parsedMaxFailures : 2;
+  let consecutiveFailures = 0;
 
   // Navigate to starting URL
   await browser.open(scenario.startUrl);
@@ -30,16 +34,15 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
 
   for (let i = 0; i < scenario.maxSteps; i++) {
     // 1. OBSERVE: screenshot + DOM snapshot
-    const screenshotPath = `${screenshotDir}/scenario-${scenario.id}-step-${i}.png`;
-    await browser.screenshot(screenshotPath);
-    screenshots.push(screenshotPath);
+    const observationScreenshotPath = `${screenshotDir}/scenario-${scenario.id}-step-${i}-before.png`;
+    await browser.screenshot(observationScreenshotPath);
 
     const domSnapshot = await browser.snapshot();
 
     // Read screenshot as base64 for vision
     let screenshotBase64: string;
     try {
-      const buffer = await readFile(screenshotPath);
+      const buffer = await readFile(observationScreenshotPath);
       screenshotBase64 = buffer.toString("base64");
     } catch {
       screenshotBase64 = "";
@@ -66,16 +69,18 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
       const json = extractJson(raw);
       action = JSON.parse(json) as AgentAction;
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       const step: AgentStep = {
         index: i,
-        action: { type: "done", reasoning: "Failed to parse LLM response", result: "fail" },
+        action: { type: "done", reasoning: `Failed to get LLM action: ${errorMessage}`, result: "fail" },
         success: false,
-        error: `LLM parse error: ${err instanceof Error ? err.message : String(err)}`,
-        screenshotPath,
+        error: `LLM error: ${errorMessage}`,
+        screenshotPath: observationScreenshotPath,
         timestamp: Date.now(),
       };
       steps.push(step);
       onStep?.(step);
+      screenshots.push(observationScreenshotPath);
       break;
     }
 
@@ -85,11 +90,12 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
         index: i,
         action,
         success: true,
-        screenshotPath,
+        screenshotPath: observationScreenshotPath,
         timestamp: Date.now(),
       };
       steps.push(step);
       onStep?.(step);
+      screenshots.push(observationScreenshotPath);
 
       return {
         scenario,
@@ -103,13 +109,98 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
 
     let success = true;
     let error: string | undefined;
+    let stepScreenshotPath = observationScreenshotPath;
+    let beforeSnapshot: Awaited<ReturnType<typeof browser.takePageSnapshot>> | null = null;
+    let afterSnapshot: Awaited<ReturnType<typeof browser.takePageSnapshot>> | null = null;
+    let clickMetaBefore: Awaited<ReturnType<typeof browser.getElementMeta>> | null = null;
+
+    try {
+      beforeSnapshot = await browser.takePageSnapshot();
+    } catch {
+      // Best-effort snapshot; don't fail the step
+    }
+
+    if (action.type === "click" && action.selector) {
+      try {
+        clickMetaBefore = await browser.getElementMeta(action.selector);
+      } catch {
+        clickMetaBefore = null;
+      }
+    }
 
     try {
       await executeAction(browser, action);
       await browser.waitForStability();
+      try {
+        afterSnapshot = await browser.takePageSnapshot();
+      } catch {
+        // Best-effort snapshot; don't fail the step
+      }
+
+      if (beforeSnapshot && afterSnapshot) {
+        const outcome = browser.detectActionOutcome(beforeSnapshot, afterSnapshot);
+        const shouldChange = action.type === "click" || action.type === "navigate";
+        if (shouldChange && outcome.type === "no_change") {
+          let allowNoChange = false;
+
+          if (action.type === "click" && action.selector && clickMetaBefore) {
+            const normalizeUrl = (url: string): string => {
+              try {
+                const parsed = new URL(url);
+                parsed.hash = "";
+                let result = parsed.toString();
+                if (result.endsWith("/")) result = result.slice(0, -1);
+                return result;
+              } catch {
+                return url.replace(/#.*$/, "").replace(/\/$/, "");
+              }
+            };
+
+            if (clickMetaBefore.href && beforeSnapshot.url) {
+              const targetUrl = normalizeUrl(clickMetaBefore.href);
+              const currentUrl = normalizeUrl(beforeSnapshot.url);
+              if (targetUrl === currentUrl) {
+                allowNoChange = true;
+              }
+            }
+
+            if (!allowNoChange) {
+              try {
+                const clickMetaAfter = await browser.getElementMeta(action.selector);
+                if (clickMetaAfter) {
+                  if (
+                    clickMetaBefore.ariaExpanded !== clickMetaAfter.ariaExpanded ||
+                    clickMetaBefore.ariaPressed !== clickMetaAfter.ariaPressed ||
+                    clickMetaBefore.ariaChecked !== clickMetaAfter.ariaChecked ||
+                    clickMetaBefore.dataState !== clickMetaAfter.dataState ||
+                    clickMetaBefore.className !== clickMetaAfter.className
+                  ) {
+                    allowNoChange = true;
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            }
+          }
+
+          if (!allowNoChange) {
+            success = false;
+            error = `No observable change after ${action.type}. ${outcome.details}`;
+          }
+        }
+      }
     } catch (err) {
       success = false;
       error = err instanceof Error ? err.message : String(err);
+    }
+
+    try {
+      const afterPath = `${screenshotDir}/scenario-${scenario.id}-step-${i}.png`;
+      await browser.screenshot(afterPath);
+      stepScreenshotPath = afterPath;
+    } catch {
+      // Keep observation screenshot as fallback
     }
 
     // 4. RECORD
@@ -118,17 +209,34 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
       action,
       success,
       error,
-      screenshotPath,
+      screenshotPath: stepScreenshotPath,
       timestamp: Date.now(),
     };
     steps.push(step);
     onStep?.(step);
+    screenshots.push(stepScreenshotPath);
 
     const actionDesc = formatAction(action);
     history.push({
       action: actionDesc,
-      result: success ? "success" : `failed: ${error}`,
+      result: success ? "success" : `failed: ${error ?? "unknown error"}`,
     });
+
+    if (!success) {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= maxConsecutiveFailures) {
+        return {
+          scenario,
+          status: "fail",
+          steps,
+          summary: `Stopped after ${consecutiveFailures} consecutive failures: ${error ?? "unknown error"}`,
+          evidence: { screenshots },
+          durationMs: Date.now() - startTime,
+        };
+      }
+    } else {
+      consecutiveFailures = 0;
+    }
   }
 
   // Max steps reached

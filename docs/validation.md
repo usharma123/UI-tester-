@@ -156,6 +156,18 @@ Generates traceability report:
 
 ## Output Format
 
+### Output Files
+
+Reports are saved to the output directory (`--output`, default: `./reports`) as timestamped files:
+
+```
+reports/
+├── traceability-report-2026-02-04T12-34-56.json
+└── traceability-report-2026-02-04T12-34-56.md
+```
+
+Evidence entries in the report reference screenshot file paths captured during the run.
+
 ### Traceability Report Structure
 
 ```json
@@ -268,7 +280,6 @@ Additional validation-specific settings:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MAX_PAGES` | `50` | Maximum pages to discover and test |
-| `STEPS_PER_PAGE` | `5` | Maximum steps per page |
 | `PARALLEL_BROWSERS` | `5` | Concurrent browser instances |
 
 ## Troubleshooting

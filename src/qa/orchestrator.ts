@@ -26,6 +26,7 @@ export interface PipelineOptions {
   url: string;
   goals?: string;
   runId: string;
+  eventsFilePath?: string;
   onProgress: ProgressCallback;
 }
 
@@ -36,12 +37,15 @@ export interface PipelineResult {
 }
 
 export async function runQAPipeline(options: PipelineOptions): Promise<PipelineResult> {
-  const { config, url, goals, runId, onProgress } = options;
+  const { config, url, goals, runId, eventsFilePath, onProgress } = options;
   const timestamp = getTimestamp();
   const screenshotDir = join(tmpdir(), `qa-screenshots-${timestamp}`);
   await ensureDir(screenshotDir);
 
   await localStorage.createLocalRun(runId, url, goals || config.goals);
+  if (eventsFilePath) {
+    await localStorage.setLocalRunEventsFile(runId, eventsFilePath);
+  }
 
   const llm = createLLMClient(config);
   const screenshotUrlMap: Record<string, string> = {};
@@ -161,9 +165,10 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
               llm,
               screenshotDir,
               onStep: (step) => {
+                const errorSuffix = step.error ? ` — ${step.error}` : "";
                 emit(onProgress, {
                   type: "log",
-                  message: `  [${scenario.id}] Step ${step.index}: ${step.action.type}${step.action.selector ? ` ${step.action.selector}` : ""} → ${step.success ? "OK" : "FAIL"}`,
+                  message: `  [${scenario.id}] Step ${step.index}: ${step.action.type}${step.action.selector ? ` ${step.action.selector}` : ""} → ${step.success ? "OK" : "FAIL"}${errorSuffix}`,
                   level: step.success ? "info" : "warn",
                 });
               },
@@ -194,11 +199,24 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
 
             return result;
           } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            emit(onProgress, {
+              type: "scenario_complete",
+              scenarioId: scenario.id,
+              status: "error",
+              index: globalIdx,
+              total: allScenarios.length,
+            } as any);
+            emit(onProgress, {
+              type: "log",
+              message: `  [${scenario.id}] Scenario error: ${errorMessage}`,
+              level: "warn",
+            });
             return {
               scenario,
               status: "error" as const,
               steps: [],
-              summary: `Scenario failed: ${err instanceof Error ? err.message : String(err)}`,
+              summary: `Scenario failed: ${errorMessage}`,
               evidence: { screenshots: [] },
               durationMs: 0,
             } satisfies TestResult;

@@ -18,6 +18,28 @@ export interface LLMClient {
   chat(messages: LLMMessage[], options?: { temperature?: number; maxTokens?: number }): Promise<string>;
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise;
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 export function createLLMClient(config: Config): LLMClient {
   const client = new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
@@ -27,13 +49,18 @@ export function createLLMClient(config: Config): LLMClient {
   return {
     async chat(messages, options = {}) {
       const { temperature = 0.2, maxTokens = 4096 } = options;
+      const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS ?? "60000", 10);
 
-      const response = await client.chat.completions.create({
-        model: config.openRouterModel,
-        messages: messages as OpenAI.ChatCompletionMessageParam[],
-        temperature,
-        max_tokens: maxTokens,
-      });
+      const response = await withTimeout(
+        client.chat.completions.create({
+          model: config.openRouterModel,
+          messages: messages as OpenAI.ChatCompletionMessageParam[],
+          temperature,
+          max_tokens: maxTokens,
+        }),
+        timeoutMs,
+        "LLM request"
+      );
 
       return response.choices[0]?.message?.content ?? "";
     },

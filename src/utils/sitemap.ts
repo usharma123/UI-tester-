@@ -315,11 +315,15 @@ function shouldSkipUrl(url: string): boolean {
  * Normalize a URL for deduplication
  * Removes trailing slashes, fragments, and common query params
  */
-function normalizeUrlForDedup(url: string): string {
+function normalizeUrlForDedup(url: string, options?: { keepHash?: boolean }): string {
   try {
     const parsed = new URL(url);
-    // Remove fragment
-    parsed.hash = "";
+    // Remove fragment unless explicitly kept
+    if (!options?.keepHash) {
+      parsed.hash = "";
+    } else if (parsed.hash === "#") {
+      parsed.hash = "";
+    }
     // Remove common tracking params
     const trackingParams = ["utm_source", "utm_medium", "utm_campaign", "ref", "source"];
     trackingParams.forEach((param) => parsed.searchParams.delete(param));
@@ -343,10 +347,15 @@ function normalizeHostname(hostname: string): string {
 /**
  * Filter and deduplicate discovered links
  */
-function filterDiscoveredLinks(links: LinkInfo[], baseUrl: string): string[] {
+function filterDiscoveredLinks(
+  links: LinkInfo[],
+  baseUrl: string,
+  options?: { includeHashLinks?: boolean }
+): string[] {
   const baseHost = normalizeHostname(new URL(baseUrl).hostname);
   const seen = new Set<string>();
   const filtered: string[] = [];
+  const includeHashLinks = options?.includeHashLinks === true;
 
   for (const link of links) {
     try {
@@ -361,11 +370,11 @@ function filterDiscoveredLinks(links: LinkInfo[], baseUrl: string): string[] {
       // Skip auth/file/system URLs
       if (shouldSkipUrl(link.href)) continue;
 
-      // Skip hash-only links
-      if (parsed.pathname === "/" && parsed.hash && !parsed.search) continue;
+      // Skip hash-only links unless explicitly included
+      if (parsed.pathname === "/" && parsed.hash && !parsed.search && !includeHashLinks) continue;
 
       // Normalize and deduplicate
-      const normalized = normalizeUrlForDedup(link.href);
+      const normalized = normalizeUrlForDedup(link.href, { keepHash: includeHashLinks });
       if (seen.has(normalized)) continue;
       seen.add(normalized);
 
@@ -390,6 +399,9 @@ export async function crawlSitemap(
 ): Promise<SitemapResult> {
   const base = baseUrl.replace(/\/$/, "");
   const baseHost = new URL(base).hostname;
+  const includeHashLinksEnv = ["1", "true", "yes", "on"].includes(
+    (process.env.INCLUDE_HASH_LINKS || "").toLowerCase()
+  );
 
   // Track discovered URLs and their depths
   const discovered = new Map<string, number>(); // url -> depth discovered at
@@ -400,9 +412,22 @@ export async function crawlSitemap(
   discovered.set(normalizedBase, 0);
 
   try {
+    // Ensure we're on the base page before extracting links
+    try {
+      await browser.open(base);
+      await browser.waitForStability();
+    } catch {
+      // Best-effort; continue with current page if navigation fails
+    }
+
     // Get links from the current page (already opened by caller)
     const initialLinks = await browser.getLinks();
-    const filteredLinks = filterDiscoveredLinks(initialLinks, base);
+    let filteredLinks = filterDiscoveredLinks(initialLinks, base, { includeHashLinks: includeHashLinksEnv });
+    if (!includeHashLinksEnv && filteredLinks.length < 3) {
+      const withHash = filterDiscoveredLinks(initialLinks, base, { includeHashLinks: true });
+      const merged = new Set([...filteredLinks, ...withHash]);
+      filteredLinks = Array.from(merged);
+    }
 
     // Add discovered links to our collection
     for (const url of filteredLinks) {
@@ -427,7 +452,12 @@ export async function crawlSitemap(
 
         // Get links from this page
         const pageLinks = await browser.getLinks();
-        const newLinks = filterDiscoveredLinks(pageLinks, base);
+        let newLinks = filterDiscoveredLinks(pageLinks, base, { includeHashLinks: includeHashLinksEnv });
+        if (!includeHashLinksEnv && newLinks.length < 3) {
+          const withHash = filterDiscoveredLinks(pageLinks, base, { includeHashLinks: true });
+          const merged = new Set([...newLinks, ...withHash]);
+          newLinks = Array.from(merged);
+        }
 
         // Add new discoveries
         for (const newUrl of newLinks) {

@@ -6,6 +6,7 @@ export interface ParsedArgs {
   goals?: string;
   specFile?: string;
   outputDir?: string;
+  jsonLogs: boolean;
   help: boolean;
 }
 
@@ -17,6 +18,7 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {
     command: "test",
     help: false,
     outputDir: DEFAULT_OUTPUT_DIR,
+    jsonLogs: false,
   };
 
   if (args[0] === "validate") {
@@ -58,6 +60,12 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {
       continue;
     }
 
+    if (arg === "--json-logs") {
+      result.jsonLogs = true;
+      i++;
+      continue;
+    }
+
     // Positional argument - URL for test command
     if (!arg.startsWith("-") && !result.url) {
       result.url = arg;
@@ -83,6 +91,7 @@ Options:
   --spec, -s <file>     Path to requirements/specification file (required)
   --url, -u <url>       URL to validate against (required)
   --output, -o <dir>    Output directory for reports (default: ./reports)
+  --json-logs           Write streaming logs as JSON lines to .ui-qa-runs/<runId>/events.jsonl
   --help, -h            Show this help message
 
 Examples:
@@ -107,6 +116,7 @@ Commands:
 
 Options:
   --goals, -g <string>  Test goals (default: "homepage UX + primary CTA + form validation + keyboard")
+  --json-logs           Write streaming logs as JSON lines to .ui-qa-runs/<runId>/events.jsonl
   --help, -h            Show this help message
 
 Examples:

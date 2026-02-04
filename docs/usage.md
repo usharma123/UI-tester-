@@ -16,7 +16,7 @@ ui-qa [url] [options]
 
 | Option | Description |
 |--------|-------------|
-| `--goals <string>` | Testing objectives (overrides environment variable) |
+| `--goals`, `-g <string>` | Testing objectives (overrides environment variable) |
 | `--help`, `-h` | Display help |
 
 ### Validation Mode
@@ -67,12 +67,14 @@ Running without a URL launches the interactive interface:
 npx @usharma124/ui-qa
 ```
 
+You will be prompted for the URL, and `https://` is added automatically if missing. Use `--goals` or the `GOALS` environment variable to customize test objectives.
+
 ### Keyboard Controls
 
 | Key | Action |
 |-----|--------|
 | `Enter` | Submit / Continue |
-| `↑` / `↓` | Scroll logs |
+| `↑` / `↓` | Scroll logs (while running) |
 | `r` | Retry on error |
 | `q` | Quit |
 
@@ -80,40 +82,32 @@ npx @usharma124/ui-qa
 
 ### Test Mode Phases
 
-#### Init
-
-Opens a headless browser and captures an initial screenshot.
-
 #### Discovery
 
 Locates pages through:
 - `sitemap.xml` parsing
 - `robots.txt` sitemap references
-- Recursive link crawling
+- Recursive link crawling (fallback)
 
-#### Planning
+#### Analysis
 
-The LLM analyzes each page and generates a test plan:
-- Identifies interactive elements
-- Sequences test actions
+The LLM analyzes each page to generate test scenarios:
+- Considers DOM structure and a screenshot
 - Incorporates specified goals
+- Caps scenarios per page
 
 #### Execution
 
-Runs tests using Playwright across multiple viewports:
-- Desktop (1365×768), Tablet (820×1180), Mobile (390×844)
-- Clicks, form submissions, navigation
-- Screenshot capture before and after each action
-- Automatic retry with exponential backoff on failures
-- Console and error logging
-- Visual audits: Detects overlapping elements, clipped text, small tap targets, and other UI issues
-- State tracking: Avoids revisiting identical page states
-- Coverage tracking: Monitors URLs, forms, dialogs, and interactions tested
+Runs each scenario using Playwright:
+- Executes step-by-step actions (click, fill, navigate, etc.)
+- Captures screenshots for each step
+- Runs scenarios concurrently with multiple browsers
+- Retries transient failures
 
 #### Evaluation
 
-The LLM reviews all evidence and produces:
-- Quality score (0–100)
+The LLM reviews evidence and produces:
+- Quality score (0-100)
 - Categorized issues
 - Reproduction steps
 - Fix recommendations
@@ -190,12 +184,12 @@ Results are written to `.ui-qa-runs/<run-id>/`:
 .ui-qa-runs/
 └── cli-1234567890/
     ├── run.json
-    ├── report.json
-    ├── evidence.json
     ├── report.md
     ├── llm-fix.txt
     └── screenshots/
 ```
+
+`run.json` contains run metadata plus the embedded report and execution evidence.
 
 ### Validation Mode Output
 
@@ -203,12 +197,8 @@ Results are written to the specified output directory (default: `./reports`):
 
 ```
 reports/
-└── validation-1234567890/
-    ├── traceability-report.json
-    ├── traceability-report.md
-    └── screenshots/
-        ├── req-001-login.png
-        └── ...
+├── traceability-report-2026-02-04T12-34-56.json
+└── traceability-report-2026-02-04T12-34-56.md
 ```
 
 ### File Reference
@@ -217,9 +207,7 @@ reports/
 
 | File | Contents |
 |------|----------|
-| `run.json` | Run metadata and status |
-| `report.json` | Structured report with scores and issues |
-| `evidence.json` | Detailed execution data |
+| `run.json` | Run metadata plus embedded report and evidence |
 | `report.md` | Human-readable summary |
 | `llm-fix.txt` | Instructions for automated fixes |
 | `screenshots/` | Visual evidence |
@@ -228,26 +216,35 @@ reports/
 
 | File | Contents |
 |------|----------|
-| `traceability-report.json` | Complete validation report with requirements, rubric, results, and scores |
-| `traceability-report.md` | Human-readable summary with requirement traceability |
-| `screenshots/` | Visual evidence linked to requirements |
+| `traceability-report-<timestamp>.json` | Complete validation report with requirements, rubric, results, and scores |
+| `traceability-report-<timestamp>.md` | Human-readable summary with requirement traceability |
 
 ### Test Mode Report Schema
 
 ```json
 {
+  "url": "https://example.com",
+  "testedFlows": ["Checkout happy path"],
   "score": 85,
   "summary": "...",
   "issues": [
     {
       "severity": "high",
-      "category": "accessibility",
+      "category": "Accessibility",
       "title": "Missing form labels",
-      "description": "...",
-      "reproduction": ["..."],
-      "suggestion": "..."
+      "reproSteps": ["Open the checkout form"],
+      "expected": "Every input has a visible label",
+      "actual": "Email input has no label",
+      "suggestedFix": "Add a label tied to the input",
+      "evidence": ["/path/to/screenshot.png"]
     }
-  ]
+  ],
+  "artifacts": {
+    "screenshots": ["/path/to/step-000.png"],
+    "evidenceFile": "/path/to/.ui-qa-runs/cli-123/screenshots",
+    "reportFile": "/path/to/.ui-qa-runs/cli-123/report.md",
+    "llmFixFile": "/path/to/.ui-qa-runs/cli-123/llm-fix.txt"
+  }
 }
 ```
 
@@ -283,7 +280,7 @@ reports/
       "requirementId": "REQ-001",
       "status": "pass",
       "score": 95,
-      "evidence": ["screenshots/req-001-login.png"],
+      "evidence": ["/path/to/screenshot.png"],
       "reasoning": "..."
     }
   ],
@@ -298,162 +295,24 @@ reports/
 
 | Category | Description |
 |----------|-------------|
-| `accessibility` | ARIA, keyboard navigation, screen readers |
-| `usability` | UX problems, confusing flows |
-| `functionality` | Broken features, errors |
-| `performance` | Loading, animations |
-| `visual` | Layout, responsive design, visual heuristics (overlapping elements, clipped text, etc.) |
+| `Navigation` | Navigation flows and routing issues |
+| `Forms` | Form usability and validation |
+| `Accessibility` | ARIA, keyboard navigation, screen readers |
+| `Visual` | Layout and visual consistency |
+| `Feedback` | Errors, toasts, and user feedback gaps |
+| `Content` | Copy, labels, and content clarity |
 
 ### Severity Levels
 
 | Level | Description |
 |-------|-------------|
-| `critical` | Site unusable |
-| `high` | Significant impact |
-| `medium` | Notable issues |
-| `low` | Minor improvements |
+| `blocker` | Site or critical flow is unusable |
+| `high` | Significant impact or broken path |
+| `medium` | Notable issue with workaround |
+| `low` | Minor issue |
+| `nit` | Cosmetic or polish improvement |
 
-## Coverage-Guided Exploration (Advanced)
+## More Details
 
-Coverage-guided exploration is an advanced testing mode that intelligently explores websites by:
-
-1. **State Fingerprinting**: Creates unique fingerprints for each page state to detect revisits
-2. **Coverage Tracking**: Monitors which URLs, forms, dialogs, and interactions have been tested
-3. **Budget Management**: Enforces limits on steps, states, time, and stagnation detection
-4. **Action Scoring**: Prioritizes actions based on novelty, business criticality, risk, and branch factor
-5. **Beam Search**: Explores multiple promising paths simultaneously
-
-### Enabling Coverage-Guided Exploration
-
-```bash
-# Enable via environment variable
-COVERAGE_GUIDED=true npx @usharma124/ui-qa https://example.com
-
-# Or set in .env file
-COVERAGE_GUIDED=true
-EXPLORATION_MODE=coverage_guided
-BEAM_WIDTH=3
-```
-
-### Exploration Strategies
-
-- **`coverage_guided`** (default): Scores actions by coverage potential
-- **`breadth_first`**: Prioritizes visiting new URLs
-- **`depth_first`**: Explores deeply before backtracking
-- **`random`**: Random action selection
-
-### Budget Configuration
-
-Control exploration limits:
-
-```bash
-# Limit total steps
-BUDGET_MAX_TOTAL_STEPS=500
-
-# Limit unique states
-BUDGET_MAX_UNIQUE_STATES=100
-
-# Stop if no coverage gain for 15 steps
-BUDGET_STAGNATION_THRESHOLD=15
-
-# Maximum exploration depth
-BUDGET_MAX_DEPTH=10
-
-# Time limit (10 minutes)
-BUDGET_MAX_TIME_MS=600000
-```
-
-## Auth Fixture Management
-
-Save and reuse authentication states for testing authenticated areas:
-
-### Saving Auth Fixtures
-
-1. Manually authenticate in your browser
-2. Save the auth state:
-
-```bash
-# Via API (programmatic)
-# The auth manager can save browser state after manual login
-```
-
-### Using Auth Fixtures
-
-```bash
-# Use a saved fixture
-AUTH_FIXTURE=my-fixture npx @usharma124/ui-qa https://app.example.com
-```
-
-### Supported Auth Types
-
-- Form-based login (email/password)
-- OAuth providers (Google, GitHub, Microsoft, Facebook, Twitter)
-- SSO (Single Sign-On)
-- Session-based authentication
-
-## Safety
-
-UI QA is designed for safe operation:
-
-- Uses dummy data for forms (`test@example.com`)
-- Does not submit payment forms
-- Redacts sensitive data before LLM processing
-- Enforces timeouts on all operations
-- Budget limits prevent infinite exploration loops
-- State tracking prevents redundant testing
-
-## Debugging
-
-Enable verbose output:
-
-```bash
-DEBUG=true npx @usharma124/ui-qa https://example.com
-```
-
-## Score Interpretation
-
-### Test Mode Scores
-
-| Range | Assessment |
-|-------|------------|
-| 90–100 | Excellent |
-| 70–89 | Good |
-| 50–69 | Fair |
-| Below 50 | Needs attention |
-
-### Validation Mode Scores
-
-**Overall Score (0-100):**
-- Weighted average of all requirement scores based on rubric weights
-
-**Coverage Score (0-100):**
-- Percentage of requirements that were successfully tested
-- Requirements marked as `not_tested` reduce coverage
-
-**Requirement Status:**
-- `pass`: Score 80-100, all criteria met
-- `partial`: Score 40-79, some criteria met
-- `fail`: Score 0-39, critical criteria not met
-- `not_tested`: Requirement could not be tested
-
-## Specification File Format
-
-Validation mode supports Markdown specification files. The LLM will extract requirements from structured content:
-
-```markdown
-# Requirements
-
-## REQ-001: User Login
-**Priority:** Must
-**Category:** Functional
-
-Users must be able to log in with email and password.
-
-**Acceptance Criteria:**
-- Login form is visible on the homepage
-- Email and password fields are present
-- Submit button triggers authentication
-- Error message shown for invalid credentials
-```
-
-The tool automatically identifies requirement-like content and extracts structured data including IDs, priorities, categories, and acceptance criteria.
+- [Advanced features](/advanced-features)
+- [Configuration](/configuration)

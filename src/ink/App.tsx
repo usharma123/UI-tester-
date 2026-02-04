@@ -20,13 +20,14 @@ interface AppProps {
   initialUrl?: string;
   initialGoals?: string;
   updateInfo?: UpdateInfo | null;
+  jsonLogs?: boolean;
 }
 
 // Fixed heights for layout components to prevent terminal reflow
 const HEADER_HEIGHT = 3;
 const PADDING = 2;
 
-export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.ReactElement {
+export function App({ initialUrl, initialGoals, updateInfo, jsonLogs }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [terminalHeight, setTerminalHeight] = useState(stdout.rows || 24);
@@ -53,7 +54,7 @@ export function App({ initialUrl, initialGoals, updateInfo }: AppProps): React.R
     dispatch({ type: "PROCESS_EVENT", event });
   }, []);
 
-  const { startRun, isRunning } = useQARunner(handleEvent);
+  const { startRun, isRunning } = useQARunner(handleEvent, { jsonLogs });
 
   const handleStartRun = useCallback(
     async (url: string, goals?: string) => {

@@ -98,18 +98,20 @@ npx @usharma124/ui-qa validate --spec requirements.md --url https://app.example.
 3. View results:
 
 **Test Mode** - Results in `.ui-qa-runs/`:
+
 | File | Contents |
 |------|----------|
+| `run.json` | Run metadata plus embedded report and evidence |
 | `report.md` | Human-readable report |
-| `report.json` | Structured data |
+| `llm-fix.txt` | Plain-text fix guide for LLMs |
 | `screenshots/` | Visual evidence |
 
-**Validation Mode** - Results in specified output directory:
+**Validation Mode** - Results in the output directory (default: `./reports`):
+
 | File | Contents |
 |------|----------|
-| `traceability-report.json` | Complete validation report |
-| `traceability-report.md` | Human-readable summary |
-| `screenshots/` | Visual evidence |
+| `traceability-report-<timestamp>.json` | Full validation report |
+| `traceability-report-<timestamp>.md` | Human-readable summary |
 
 ## Next Steps
 

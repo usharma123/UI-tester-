@@ -9,6 +9,7 @@ export interface StreamingRunOptions {
   url: string;
   goals?: string;
   convexRunId?: string;
+  eventsFilePath?: string;
   onProgress: ProgressCallback;
 }
 
@@ -27,6 +28,7 @@ export async function runQAStreaming(options: StreamingRunOptions): Promise<Stre
       url,
       goals: goals || config.goals,
       runId,
+      eventsFilePath: options.eventsFilePath,
       onProgress,
     });
 

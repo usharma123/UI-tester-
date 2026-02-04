@@ -65,6 +65,20 @@ export interface ActionOutcome {
   success: boolean;
 }
 
+export interface ElementMeta {
+  tagName: string;
+  href?: string;
+  target?: string;
+  role?: string;
+  ariaExpanded?: string;
+  ariaPressed?: string;
+  ariaChecked?: string;
+  dataState?: string;
+  className?: string;
+  id?: string;
+  text?: string;
+}
+
 // ============================================================================
 // Stability Types
 // ============================================================================
@@ -115,6 +129,7 @@ export interface AgentBrowser {
   getLinks(): Promise<LinkInfo[]>;
   setViewportSize(width: number, height: number): Promise<void>;
   close(): Promise<void>;
+  getElementMeta(selector: string): Promise<ElementMeta | null>;
   /** Check if an element is actionable (visible, enabled, not covered) */
   checkActionability(selector: string): Promise<ActionabilityResult>;
   /** Wait for the page to be stable (no DOM mutations) */
@@ -133,6 +148,12 @@ export interface PageSnapshot {
   elementCount: number;
   textLength: number;
   dialogCount: number;
+  scrollX: number;
+  scrollY: number;
+  htmlClass: string;
+  bodyClass: string;
+  htmlDataTheme: string;
+  bodyDataTheme: string;
   timestamp: number;
 }
 
@@ -146,6 +167,17 @@ function normalizeSelector(selector: string): string {
   // Skip @e refs - they're not supported
   if (selector.startsWith("@e")) {
     throw new Error(`Element refs like "${selector}" are not supported. Use text or CSS selectors instead.`);
+  }
+
+  // Already a Playwright selector
+  if (
+    selector.startsWith("text=") ||
+    selector.startsWith("role=") ||
+    selector.startsWith("css=") ||
+    selector.startsWith("xpath=") ||
+    selector.includes(":has-text(")
+  ) {
+    return selector;
   }
 
   // text:Button Text -> text=Button Text
@@ -241,7 +273,17 @@ const SNAPSHOT_SCRIPT = `
     }
     info += ">";
 
-    if (text && el.children.length === 0) {
+    var includeText = false;
+    if (text) {
+      var textTags = ["a", "button", "label", "h1", "h2", "h3", "h4", "h5", "h6"];
+      if (textTags.indexOf(tag) !== -1) {
+        includeText = true;
+      } else if (el.getAttribute && el.getAttribute("role")) {
+        includeText = true;
+      }
+    }
+
+    if (includeText) {
       info += " " + text.slice(0, 50);
     }
 
@@ -405,12 +447,26 @@ const PAGE_SNAPSHOT_SCRIPT = `
     .map(el => el.tagName + (el.id ? '#' + el.id : '')).join(',');
   const domHash = simpleHash(tags);
   
+  const html = document.documentElement;
+  const bodyClass = body ? (body.className || '') : '';
+  const htmlClass = html ? (html.className || '') : '';
+  const bodyDataTheme = body ? (body.getAttribute('data-theme') || '') : '';
+  const htmlDataTheme = html ? (html.getAttribute('data-theme') || '') : '';
+  const scrollX = window.scrollX || 0;
+  const scrollY = window.scrollY || 0;
+
   return JSON.stringify({
     url: window.location.href,
     domHash: domHash,
     elementCount: elementCount,
     textLength: textLength,
     dialogCount: visibleDialogs.length,
+    scrollX: scrollX,
+    scrollY: scrollY,
+    htmlClass: htmlClass,
+    bodyClass: bodyClass,
+    htmlDataTheme: htmlDataTheme,
+    bodyDataTheme: bodyDataTheme,
     timestamp: Date.now()
   });
 })()
@@ -500,7 +556,16 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
       const normalizedSelector = normalizeSelector(selector);
       await withRetry(async () => {
         const p = await ensurePage();
+        const popupPromise = p.waitForEvent("popup", { timeout: 1500 }).catch(() => null);
         await p.click(normalizedSelector, { timeout: actionTimeout });
+        const popup = await popupPromise;
+        if (popup) {
+          page = popup;
+          page.setDefaultTimeout(defaultTimeout);
+          page.setDefaultNavigationTimeout(navigationTimeout);
+          await page.waitForLoadState("domcontentloaded", { timeout: navigationTimeout }).catch(() => {});
+          await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+        }
       }, options, 1);
 
       if (options.debug) {
@@ -567,16 +632,81 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
       try {
         const p = await ensurePage();
         return await p.evaluate(() => {
-          return Array.from(document.querySelectorAll("a[href]")).map((a) => ({
-            href: (a as HTMLAnchorElement).href,
-            text: (a.textContent || "").trim().slice(0, 100),
-          }));
+          const elements = Array.from(
+            document.querySelectorAll(
+              "a[href], [data-href], [data-url], [role='link'][href], [role='link'][data-href], [role='link'][data-url], button[data-href], button[data-url]"
+            )
+          );
+
+          const links: Array<{ href: string; text: string }> = [];
+          for (const el of elements) {
+            const raw =
+              (el.getAttribute && (el.getAttribute("href") || el.getAttribute("data-href") || el.getAttribute("data-url"))) ||
+              "";
+            const href = raw.trim();
+            if (!href) continue;
+
+            try {
+              const resolved = new URL(href, document.baseURI).href;
+              links.push({
+                href: resolved,
+                text: (el.textContent || "").trim().slice(0, 100),
+              });
+            } catch {
+              // Skip invalid URLs
+            }
+          }
+
+          return links;
         });
       } catch (error) {
         if (options.debug) {
           console.log(`[playwright] getLinks failed: ${error}`);
         }
         return [];
+      }
+    },
+
+    async getElementMeta(selector: string): Promise<ElementMeta | null> {
+      const normalizedSelector = normalizeSelector(selector);
+      const p = await ensurePage();
+      const handle = await p.$(normalizedSelector);
+      if (!handle) {
+        return null;
+      }
+      try {
+        return await handle.evaluate((el) => {
+          const element = el as HTMLElement;
+          const tagName = element.tagName.toLowerCase();
+          const anchor = element as HTMLAnchorElement;
+          const role = element.getAttribute("role") || undefined;
+          const ariaExpanded = element.getAttribute("aria-expanded") || undefined;
+          const ariaPressed = element.getAttribute("aria-pressed") || undefined;
+          const ariaChecked = element.getAttribute("aria-checked") || undefined;
+          const dataState = element.getAttribute("data-state") || undefined;
+          const className =
+            typeof element.className === "string" ? element.className : String(element.className || "");
+          const id = element.id || undefined;
+          const text = (element.textContent || "").trim().slice(0, 80) || undefined;
+          const href = anchor && anchor.href ? anchor.href : undefined;
+          const target = anchor && anchor.target ? anchor.target : undefined;
+
+          return {
+            tagName,
+            href,
+            target,
+            role,
+            ariaExpanded,
+            ariaPressed,
+            ariaChecked,
+            dataState,
+            className,
+            id,
+            text,
+          };
+        }) as ElementMeta;
+      } finally {
+        await handle.dispose();
       }
     },
 
@@ -667,6 +797,32 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
         return {
           type: "dialog_opened",
           details: `Dialog count increased from ${beforeSnapshot.dialogCount} to ${afterSnapshot.dialogCount}`,
+          success: true,
+        };
+      }
+
+      // Check for scroll position change
+      const scrollDelta =
+        Math.abs(afterSnapshot.scrollY - beforeSnapshot.scrollY) +
+        Math.abs(afterSnapshot.scrollX - beforeSnapshot.scrollX);
+      if (scrollDelta > 4) {
+        return {
+          type: "dom_changed",
+          details: `Scroll position changed (Δ${Math.round(scrollDelta)}px)`,
+          success: true,
+        };
+      }
+
+      // Check for theme/class changes
+      if (
+        beforeSnapshot.bodyClass !== afterSnapshot.bodyClass ||
+        beforeSnapshot.htmlClass !== afterSnapshot.htmlClass ||
+        beforeSnapshot.bodyDataTheme !== afterSnapshot.bodyDataTheme ||
+        beforeSnapshot.htmlDataTheme !== afterSnapshot.htmlDataTheme
+      ) {
+        return {
+          type: "dom_changed",
+          details: "Theme/class attributes changed",
           success: true,
         };
       }
