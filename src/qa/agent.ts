@@ -27,11 +27,17 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
   const maxConsecutiveFailures =
     Number.isFinite(parsedMaxFailures) && parsedMaxFailures > 0 ? parsedMaxFailures : 2;
   let consecutiveFailures = 0;
+  
+  // Extract target domain for boundary enforcement
+  const targetDomain = new URL(scenario.startUrl).hostname;
 
   // Navigate to starting URL
   await browser.open(scenario.startUrl);
   await browser.waitForStability();
 
+  // Track successful actions for smart completion
+  let successfulActions = 0;
+  
   for (let i = 0; i < scenario.maxSteps; i++) {
     // 1. OBSERVE: screenshot + DOM snapshot
     const observationScreenshotPath = `${screenshotDir}/scenario-${scenario.id}-step-${i}-before.png`;
@@ -47,9 +53,21 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
     } catch {
       screenshotBase64 = "";
     }
-
+    
+    // Smart completion: If we've had several successful actions and are near step limit,
+    // encourage the agent to conclude
+    const nearingLimit = i >= scenario.maxSteps - 2;
+    const hasProgress = successfulActions >= 2;
+    
     // 2. THINK: send to LLM
-    const userPrompt = buildAgentPrompt(scenario, domSnapshot, history, i);
+    const userPrompt = buildAgentPrompt(scenario, domSnapshot, history, i, scenario.maxSteps);
+    
+    // Add urgency hint if nearing limit with progress
+    let finalPrompt = userPrompt;
+    if (nearingLimit && hasProgress) {
+      finalPrompt += `\n\nHINT: You've made ${successfulActions} successful actions. Consider concluding with "done" if the main test objective has been achieved.`;
+    }
+    
     const messages: LLMMessage[] = [
       { role: "system", content: AGENT_SYSTEM_PROMPT },
       {
@@ -57,9 +75,9 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
         content: screenshotBase64
           ? [
               screenshotToContent(screenshotBase64),
-              { type: "text" as const, text: userPrompt },
+              { type: "text" as const, text: finalPrompt },
             ]
-          : userPrompt,
+          : finalPrompt,
       },
     ];
 
@@ -129,7 +147,7 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
     }
 
     try {
-      await executeAction(browser, action);
+      await executeAction(browser, action, targetDomain);
       await browser.waitForStability();
       try {
         afterSnapshot = await browser.takePageSnapshot();
@@ -236,6 +254,10 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
       }
     } else {
       consecutiveFailures = 0;
+      // Track successful meaningful actions (not just waits/asserts)
+      if (action.type !== "wait" && action.type !== "assert") {
+        successfulActions += 1;
+      }
     }
   }
 
@@ -250,10 +272,27 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
   };
 }
 
-async function executeAction(browser: AgentBrowser, action: AgentAction): Promise<void> {
+async function executeAction(
+  browser: AgentBrowser, 
+  action: AgentAction,
+  targetDomain: string
+): Promise<void> {
   switch (action.type) {
     case "click":
       if (!action.selector) throw new Error("click requires a selector");
+      // Check if clicking an external link - skip the click but don't fail
+      try {
+        const meta = await browser.getElementMeta(action.selector);
+        if (meta?.href) {
+          const linkDomain = new URL(meta.href).hostname;
+          if (linkDomain !== targetDomain && !linkDomain.endsWith(`.${targetDomain}`)) {
+            // External link - verify it exists but don't click
+            return; // Success - link exists, we just don't navigate
+          }
+        }
+      } catch {
+        // Couldn't get meta, proceed with click
+      }
       await browser.click(action.selector);
       break;
     case "fill":
@@ -273,6 +312,18 @@ async function executeAction(browser: AgentBrowser, action: AgentAction): Promis
       break;
     case "navigate":
       if (!action.value) throw new Error("navigate requires a URL");
+      // Enforce domain boundary
+      try {
+        const navigateDomain = new URL(action.value).hostname;
+        if (navigateDomain !== targetDomain && !navigateDomain.endsWith(`.${targetDomain}`)) {
+          throw new Error(`Cannot navigate to external domain: ${navigateDomain}. Stay on ${targetDomain}`);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.includes("Cannot navigate")) {
+          throw e;
+        }
+        // Invalid URL, let browser handle it
+      }
       await browser.open(action.value);
       break;
     case "wait":

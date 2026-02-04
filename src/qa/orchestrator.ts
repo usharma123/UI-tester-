@@ -106,19 +106,26 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
       }
     }
 
+    // Deduplicate scenarios - global scenarios only run once, page scenarios run per-page
+    const deduplicatedScenarios = deduplicateScenarios(allScenarios);
+    const removedCount = allScenarios.length - deduplicatedScenarios.length;
+    
     emit(onProgress, {
       type: "log",
-      message: `Generated ${allScenarios.length} test scenarios across ${pageUrls.length} pages`,
+      message: `Generated ${allScenarios.length} scenarios, deduplicated to ${deduplicatedScenarios.length} (removed ${removedCount} duplicates)`,
       level: "info",
     });
 
     emit(onProgress, {
       type: "scenarios_generated",
-      totalScenarios: allScenarios.length,
+      totalScenarios: deduplicatedScenarios.length,
       totalPages: pageUrls.length,
     } as any);
 
     emitPhaseComplete(onProgress, "analysis");
+    
+    // Use deduplicated scenarios for execution
+    const scenariosToRun = deduplicatedScenarios;
 
     // =========================================================================
     // Phase 3: EXECUTION — run each scenario through agent loop
@@ -130,11 +137,11 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
     const scenarioBrowsers: AgentBrowser[] = [];
 
     // Run scenarios — use parallel browsers for concurrency
-    const concurrency = Math.min(config.parallelBrowsers, allScenarios.length);
+    const concurrency = Math.min(config.parallelBrowsers, scenariosToRun.length);
 
     // Simple batched execution
-    for (let batch = 0; batch < allScenarios.length; batch += concurrency) {
-      const batchScenarios = allScenarios.slice(batch, batch + concurrency);
+    for (let batch = 0; batch < scenariosToRun.length; batch += concurrency) {
+      const batchScenarios = scenariosToRun.slice(batch, batch + concurrency);
 
       const batchResults = await Promise.all(
         batchScenarios.map(async (scenario, idx) => {
@@ -155,7 +162,7 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
             scenarioId: scenario.id,
             title: scenario.title,
             index: globalIdx,
-            total: allScenarios.length,
+            total: scenariosToRun.length,
           } as any);
 
           try {
@@ -179,7 +186,7 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
               scenarioId: scenario.id,
               status: result.status,
               index: globalIdx,
-              total: allScenarios.length,
+              total: scenariosToRun.length,
             } as any);
 
             // Save screenshots
@@ -205,7 +212,7 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
               scenarioId: scenario.id,
               status: "error",
               index: globalIdx,
-              total: allScenarios.length,
+              total: scenariosToRun.length,
             } as any);
             emit(onProgress, {
               type: "log",
@@ -292,4 +299,46 @@ export async function runQAPipeline(options: PipelineOptions): Promise<PipelineR
   } finally {
     try { await browser.close(); } catch { /* ignore */ }
   }
+}
+
+/**
+ * Deduplicate scenarios:
+ * - Global scenarios (site-wide features) are only tested once
+ * - Page-specific scenarios are kept for each page
+ */
+function deduplicateScenarios(scenarios: TestScenario[]): TestScenario[] {
+  const seenGlobalIds = new Set<string>();
+  const result: TestScenario[] = [];
+  
+  for (const scenario of scenarios) {
+    // Normalize ID for comparison (handle slight variations)
+    const normalizedId = normalizeScenarioId(scenario.id);
+    
+    if (scenario.scope === "global") {
+      // Only keep first instance of global scenarios
+      if (!seenGlobalIds.has(normalizedId)) {
+        seenGlobalIds.add(normalizedId);
+        result.push(scenario);
+      }
+    } else {
+      // Keep all page-specific scenarios
+      result.push(scenario);
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Normalize scenario ID for deduplication
+ * e.g., "theme-toggle-functionality" and "theme-toggle-test" -> "theme-toggle"
+ */
+function normalizeScenarioId(id: string): string {
+  // Remove common suffixes
+  return id
+    .replace(/-functionality$/, "")
+    .replace(/-test$/, "")
+    .replace(/-check$/, "")
+    .replace(/-validation$/, "")
+    .replace(/-verification$/, "");
 }

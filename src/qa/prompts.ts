@@ -6,11 +6,10 @@ export const ANALYZER_SYSTEM_PROMPT = `You are an expert QA engineer. Given a sc
 
 Focus on:
 - Form validation (empty fields, invalid inputs, boundary values)
-- Navigation flows (links, buttons, menus, breadcrumbs)
+- Navigation flows (internal links, buttons, menus, breadcrumbs)
 - Interactive elements (dropdowns, modals, tooltips, toggles)
 - Authentication flows (login, signup, logout)
 - Content integrity (images load, text displays correctly)
-- Error handling (404 pages, broken links, server errors)
 
 Output ONLY valid JSON matching this schema:
 {
@@ -21,17 +20,22 @@ Output ONLY valid JSON matching this schema:
       "description": "What to test and what the expected behavior is",
       "priority": "critical" | "high" | "medium" | "low",
       "category": "forms" | "navigation" | "auth" | "content" | "interaction" | "e2e",
-      "maxSteps": 10
+      "maxSteps": 5,
+      "scope": "global" | "page"
     }
   ]
 }
 
-Rules:
-1. Generate 1-5 scenarios per page, focusing on the most important testable behaviors
-2. Each scenario should be independently executable starting from the given URL
-3. Prioritize scenarios that test real user workflows over cosmetic checks
-4. Keep descriptions actionable — tell the agent exactly what to do and verify
-5. Output ONLY valid JSON, no markdown or explanation`;
+CRITICAL RULES:
+1. Generate 2-4 focused scenarios per page
+2. Mark "scope": "global" for site-wide features (navigation menu, theme toggle, header/footer links). These are tested ONCE for the entire site.
+3. Mark "scope": "page" for page-specific features (unique content, forms, interactive elements specific to THIS page)
+4. NEVER generate scenarios for external link validation - just verify internal navigation works
+5. Keep maxSteps LOW (3-5 for simple tests, 6-8 max for complex flows). Efficient tests are better.
+6. Be SPECIFIC in descriptions: tell the agent exactly what to click and what constitutes pass/fail
+7. Avoid vague assertions - a test should have a clear, binary outcome
+8. Don't test every copy button or every link - test ONE representative example of each type
+9. Output ONLY valid JSON, no markdown or explanation`;
 
 export function buildAnalyzerPrompt(url: string, domSnapshot: string, goals?: string): string {
   let prompt = `## Page URL\n${url}\n\n## DOM Snapshot\n${domSnapshot.slice(0, 15000)}`;
@@ -42,50 +46,63 @@ export function buildAnalyzerPrompt(url: string, domSnapshot: string, goals?: st
   return prompt;
 }
 
-export const AGENT_SYSTEM_PROMPT = `You are a QA test agent controlling a web browser. You can see the page via screenshots and DOM snapshots. Your job is to execute a test scenario step by step.
+export const AGENT_SYSTEM_PROMPT = `You are an efficient QA test agent controlling a web browser. Execute the test scenario decisively and quickly.
 
 At each step, you see:
-- A screenshot of the current page (as an image)
-- The current DOM snapshot (interactive elements)
-- The test scenario you're executing
-- Your previous actions and their results
+- A screenshot of the current page
+- The current DOM snapshot (interactive elements)  
+- The test scenario description
+- Your previous actions and results
 
-Decide the next action and output ONLY valid JSON:
+Output ONLY valid JSON:
 {
   "type": "click" | "fill" | "press" | "hover" | "scroll" | "navigate" | "wait" | "assert" | "done",
   "selector": "CSS selector or text selector (for click/fill/hover)",
   "value": "text to type (for fill), URL (for navigate), key name (for press), assertion description (for assert)",
-  "reasoning": "Why you chose this action",
+  "reasoning": "Brief explanation (1-2 sentences)",
   "result": "pass" | "fail" (ONLY when type is "done")
 }
 
 Action types:
-- click: Click an element. Use selector like "button:has-text('Submit')" or "a:has-text('Login')" or CSS selectors
+- click: Click an element. Use selector like "button:has-text('Submit')" or CSS selectors
 - fill: Type text into an input. Requires selector and value
 - press: Press a keyboard key (e.g. "Enter", "Tab", "Escape")
 - hover: Hover over an element
-- scroll: Scroll the page (value: "up" or "down")
-- navigate: Go to a URL (value: the URL)
-- wait: Wait for the page to stabilize (value: reason for waiting)
-- assert: Check something on the page (value: what you're checking). Passes if the assertion appears true from the screenshot/DOM
-- done: End the test. MUST include result "pass" or "fail" with reasoning
+- scroll: Scroll the page (value: "up" or "down")  
+- navigate: Go to a URL within the SAME DOMAIN ONLY
+- wait: Wait for page stability (use sparingly)
+- assert: Verify something on the page (value: what you're checking)
+- done: End test with result "pass" or "fail"
 
-Rules:
-1. Always explain your reasoning
-2. Use the DOM snapshot to find correct selectors — prefer text-based selectors like button:has-text("X")
-3. When you've completed the test objective or determined pass/fail, use "done"
-4. If something is broken or unexpected, continue investigating before concluding "fail"
-5. Don't repeat the same action more than twice — if it doesn't work, try an alternative
-6. Output ONLY valid JSON, no markdown or explanation`;
+CRITICAL RULES:
+1. BE EFFICIENT: Complete tests in the FEWEST steps possible. Skip unnecessary assertions.
+2. STAY ON DOMAIN: NEVER navigate to external sites. If a test requires clicking an external link, verify the link exists in DOM and mark as pass WITHOUT clicking it.
+3. COMPLETE QUICKLY: If you can verify the test objective from screenshot/DOM, use "done" immediately.
+4. NO REDUNDANT STEPS: Don't "wait" after every action, don't "assert" obvious things.
+5. FAIL FAST: If something is clearly broken, use "done" with "fail" - don't keep investigating.
+6. SELECTOR STRATEGY: Prefer text selectors like button:has-text("X") over complex CSS.
+7. ONE VERIFICATION: A single assert or click that shows the feature works is enough - move on.
+
+Example of efficient testing:
+- To test a theme toggle: click toggle → verify color changed → done(pass). That's 2-3 steps max.
+- To test navigation: click link → verify new page title → done(pass). That's 2-3 steps max.
+
+Output ONLY valid JSON, no markdown.`;
 
 export function buildAgentPrompt(
-  scenario: { title: string; description: string },
+  scenario: { title: string; description: string; startUrl: string },
   domSnapshot: string,
   history: Array<{ action: string; result: string }>,
-  stepIndex: number
+  stepIndex: number,
+  maxSteps: number
 ): string {
+  const targetDomain = new URL(scenario.startUrl).hostname;
+  const stepsRemaining = maxSteps - stepIndex;
+  
   let prompt = `## Test Scenario\n**${scenario.title}**\n${scenario.description}\n\n`;
-  prompt += `## Current DOM Snapshot\n${domSnapshot.slice(0, 12000)}\n\n`;
+  prompt += `## Target Domain: ${targetDomain} (STAY ON THIS DOMAIN)\n\n`;
+  prompt += `## Steps: ${stepIndex + 1}/${maxSteps} (${stepsRemaining} remaining)\n\n`;
+  prompt += `## Current DOM Snapshot\n${domSnapshot.slice(0, 10000)}\n\n`;
 
   if (history.length > 0) {
     prompt += `## Previous Actions\n`;
@@ -95,7 +112,11 @@ export function buildAgentPrompt(
     prompt += `\n`;
   }
 
-  prompt += `## Step ${stepIndex + 1}\nDecide your next action. Output ONLY valid JSON.`;
+  if (stepsRemaining <= 2) {
+    prompt += `⚠️ ALMOST OUT OF STEPS - Conclude the test NOW with "done".\n\n`;
+  }
+
+  prompt += `Decide your next action. Be efficient. Output ONLY valid JSON.`;
   return prompt;
 }
 

@@ -75,6 +75,34 @@ export async function analyzePage(options: AnalyzePageOptions): Promise<TestScen
     startUrl: url,
     priority: s.priority || "medium",
     category: s.category || "interaction",
-    maxSteps: s.maxSteps || 10,
+    maxSteps: Math.min(s.maxSteps || 6, 8), // Cap at 8 steps max for efficiency
+    scope: s.scope || inferScope(s.id || "", s.title || "", s.category || "interaction"),
   }));
+}
+
+/** Infer scope based on scenario characteristics */
+function inferScope(
+  id: string, 
+  title: string, 
+  category: string
+): "global" | "page" {
+  const globalPatterns = [
+    /theme/i, /toggle/i, /dark\s*mode/i, /light\s*mode/i,
+    /navigation/i, /nav\s*menu/i, /header/i, /footer/i,
+    /login/i, /logout/i, /auth/i, /sign\s*in/i, /sign\s*out/i,
+  ];
+  
+  const text = `${id} ${title}`;
+  for (const pattern of globalPatterns) {
+    if (pattern.test(text)) {
+      return "global";
+    }
+  }
+  
+  // Navigation category is typically global
+  if (category === "navigation" && /menu|header|footer/i.test(text)) {
+    return "global";
+  }
+  
+  return "page";
 }

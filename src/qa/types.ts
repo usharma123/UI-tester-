@@ -10,6 +10,8 @@ export interface TestScenario {
   priority: "critical" | "high" | "medium" | "low";
   category: "forms" | "navigation" | "auth" | "content" | "interaction" | "e2e";
   maxSteps: number;
+  /** "global" scenarios are site-wide features tested once; "page" scenarios are page-specific */
+  scope: "global" | "page";
 }
 
 export type AgentActionType =
