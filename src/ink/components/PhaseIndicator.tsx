@@ -8,15 +8,11 @@ interface PhaseIndicatorProps {
   completedPhases: QAPhase[];
 }
 
-// Phase order
-const phaseOrder: QAPhase[] = ["init", "discovery", "planning", "traversal", "execution", "evaluation"];
+const phaseOrder: QAPhase[] = ["discovery", "analysis", "execution", "evaluation"];
 
-// Phase labels
 const phaseLabels: Record<QAPhase, string> = {
-  init: "Initializing",
   discovery: "Discovering",
-  planning: "Planning",
-  traversal: "Testing",
+  analysis: "Analyzing",
   execution: "Executing",
   evaluation: "Evaluating",
 };

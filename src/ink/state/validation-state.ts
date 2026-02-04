@@ -158,18 +158,6 @@ export function processValidationEvent(
       });
       break;
 
-    case "pages_progress":
-      dispatch({
-        type: "UPDATE_PAGES_PROGRESS",
-        progress: {
-          tested: event.tested,
-          skipped: event.skipped,
-          remaining: event.remaining,
-          total: event.total,
-        },
-      });
-      break;
-
     case "requirement_validated":
       dispatch({
         type: "ADD_RESULT",
@@ -201,10 +189,6 @@ export function processValidationEvent(
         message: event.message,
         level: event.level,
       });
-      break;
-
-    case "page_start":
-    case "page_complete":
       break;
 
     default:

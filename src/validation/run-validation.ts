@@ -84,23 +84,23 @@ export async function runValidation(
     });
     browserToClose = browser;
 
-    const { plan, qaConfig } = await runPlanningPhase({
+    const { scenarios, qaConfig } = await runPlanningPhase({
       config,
       requirements,
       initialSnapshot,
       sitemap,
       screenshotDir,
+      browser,
       onProgress,
     });
 
     await runExecutionPhase({
       config,
       qaConfig,
-      sitemap,
+      scenarios,
       screenshotDir,
       onProgress,
       testExecution,
-      plannedStepCount: plan.steps.length,
     });
 
     const results = await runCrossValidationPhase({

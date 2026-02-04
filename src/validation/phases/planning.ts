@@ -1,11 +1,12 @@
 import type { ProgressCallback } from "../../qa/progress-types.js";
 import type { Requirement } from "../types.js";
 import type { Config } from "../../config.js";
-import type { Plan } from "../../qa/types.js";
+import type { TestScenario } from "../../qa/types.js";
 import type { SitemapResult } from "../../utils/sitemap.js";
+import type { AgentBrowser } from "../../agentBrowser.js";
 import { emit, emitValidationPhaseStart, emitValidationPhaseComplete } from "../../core/events/emit.js";
-import { formatSitemapForPlanner } from "../../utils/sitemap.js";
-import { createPlan } from "../../qa/planner.js";
+import { createLLMClient } from "../../qa/llm.js";
+import { analyzePage } from "../../qa/analyzer.js";
 import { buildValidationQaConfig } from "../qa-config.js";
 import type { ValidationConfig } from "../types.js";
 
@@ -15,22 +16,23 @@ export interface PlanningPhaseOptions {
   initialSnapshot: string;
   sitemap: SitemapResult;
   screenshotDir: string;
+  browser: AgentBrowser;
   onProgress: ProgressCallback;
 }
 
 export interface PlanningPhaseResult {
-  plan: Plan;
+  scenarios: TestScenario[];
   requirementGoals: string;
   qaConfig: Config;
 }
 
 export async function runPlanningPhase(options: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
-  const { config, requirements, initialSnapshot, sitemap, screenshotDir, onProgress } = options;
+  const { config, requirements, sitemap, screenshotDir, browser, onProgress } = options;
 
   emitValidationPhaseStart(onProgress, "planning");
   emit(onProgress, {
     type: "log",
-    message: "Generating requirement-linked test plan...",
+    message: "Generating requirement-linked test scenarios...",
     level: "info",
   });
 
@@ -39,27 +41,46 @@ export async function runPlanningPhase(options: PlanningPhaseOptions): Promise<P
     .map((r) => `${r.id}: ${r.summary}`)
     .join("; ");
 
-  const sitemapContext = formatSitemapForPlanner(sitemap);
-  const sitemapUrls = sitemap.urls.map((u) => u.loc);
-
   const qaConfig = buildValidationQaConfig(config, screenshotDir, requirementGoals);
+  const llm = createLLMClient(qaConfig);
 
-  const { plan } = await createPlan(
-    qaConfig,
-    config.url,
-    requirementGoals,
-    initialSnapshot,
-    sitemapContext,
-    sitemapUrls
-  );
+  const pageUrls = sitemap.urls.slice(0, config.maxPages).map((u) => u.loc);
+  const allScenarios: TestScenario[] = [];
+
+  for (let i = 0; i < pageUrls.length; i++) {
+    const pageUrl = pageUrls[i];
+    emit(onProgress, {
+      type: "log",
+      message: `Analyzing page ${i + 1}/${pageUrls.length}: ${pageUrl}`,
+      level: "info",
+    });
+
+    try {
+      const scenarios = await analyzePage({
+        browser,
+        url: pageUrl,
+        llm,
+        screenshotDir,
+        maxScenarios: qaConfig.maxScenariosPerPage,
+        goals: requirementGoals,
+      });
+      allScenarios.push(...scenarios);
+    } catch (err) {
+      emit(onProgress, {
+        type: "log",
+        message: `Failed to analyze ${pageUrl}: ${err instanceof Error ? err.message : String(err)}`,
+        level: "warn",
+      });
+    }
+  }
 
   emit(onProgress, {
-    type: "plan_created",
-    plan,
-    totalSteps: plan.steps.length,
+    type: "log",
+    message: `Generated ${allScenarios.length} test scenarios from ${pageUrls.length} pages`,
+    level: "info",
   });
 
   emitValidationPhaseComplete(onProgress, "planning");
 
-  return { plan, requirementGoals, qaConfig };
+  return { scenarios: allScenarios, requirementGoals, qaConfig };
 }

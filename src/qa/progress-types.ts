@@ -1,4 +1,4 @@
-import type { Plan, Report, Evidence, Step, ExecutedStepStatus } from "./types.js";
+import type { Report, Evidence, TestStatus } from "./types.js";
 import type {
   Requirement,
   Rubric,
@@ -8,7 +8,7 @@ import type {
 } from "../validation/types.js";
 
 // Phases of the QA run
-export type QAPhase = "init" | "discovery" | "planning" | "execution" | "traversal" | "evaluation";
+export type QAPhase = "discovery" | "analysis" | "execution" | "evaluation";
 
 // Sitemap URL structure
 export interface SitemapUrl {
@@ -48,28 +48,28 @@ export interface ScreenshotEvent extends SSEEventBase {
   label: string;
 }
 
-// Plan created
-export interface PlanCreatedEvent extends SSEEventBase {
-  type: "plan_created";
-  plan: Plan;
-  totalSteps: number;
+// Scenario events
+export interface ScenarioStartEvent extends SSEEventBase {
+  type: "scenario_start";
+  scenarioId: string;
+  title: string;
+  index: number;
+  total: number;
 }
 
-// Step execution events
-export interface StepStartEvent extends SSEEventBase {
-  type: "step_start";
-  stepIndex: number;
-  step: Step;
-  totalSteps: number;
+export interface ScenarioCompleteEvent extends SSEEventBase {
+  type: "scenario_complete";
+  scenarioId: string;
+  status: TestStatus;
+  index: number;
+  total: number;
 }
 
-export interface StepCompleteEvent extends SSEEventBase {
-  type: "step_complete";
-  stepIndex: number;
-  status: ExecutedStepStatus;
-  result?: string;
-  error?: string;
-  screenshotUrl?: string;
+// Scenarios generated after analysis
+export interface ScenariosGeneratedEvent extends SSEEventBase {
+  type: "scenarios_generated";
+  totalScenarios: number;
+  totalPages: number;
 }
 
 // Run completed successfully
@@ -101,40 +101,10 @@ export interface SitemapEvent extends SSEEventBase {
   totalPages: number;
 }
 
-// Page traversal events (for systematic page testing)
-export interface PageStartEvent extends SSEEventBase {
-  type: "page_start";
-  url: string;
-  pageIndex: number;
-  totalPages: number;
-}
-
-export type PageStatus = "success" | "skipped" | "failed";
-
-export interface PageCompleteEvent extends SSEEventBase {
-  type: "page_complete";
-  url: string;
-  pageIndex: number;
-  status: PageStatus;
-  screenshotUrl?: string;
-  stepsExecuted?: number;
-  error?: string;
-}
-
-// Progress tracking for pages
-export interface PagesProgressEvent extends SSEEventBase {
-  type: "pages_progress";
-  tested: number;
-  skipped: number;
-  remaining: number;
-  total: number;
-}
-
 // ===========================================
 // Validation-specific events
 // ===========================================
 
-// Validation phase lifecycle
 export interface ValidationPhaseStartEvent extends SSEEventBase {
   type: "validation_phase_start";
   phase: ValidationPhase;
@@ -145,20 +115,17 @@ export interface ValidationPhaseCompleteEvent extends SSEEventBase {
   phase: ValidationPhase;
 }
 
-// Requirements extracted from spec
 export interface RequirementsExtractedEvent extends SSEEventBase {
   type: "requirements_extracted";
   requirements: Requirement[];
   totalCount: number;
 }
 
-// Rubric generated
 export interface RubricGeneratedEvent extends SSEEventBase {
   type: "rubric_generated";
   rubric: Rubric;
 }
 
-// Single requirement validated
 export interface RequirementValidatedEvent extends SSEEventBase {
   type: "requirement_validated";
   result: RequirementResult;
@@ -166,13 +133,11 @@ export interface RequirementValidatedEvent extends SSEEventBase {
   total: number;
 }
 
-// Validation complete
 export interface ValidationCompleteEvent extends SSEEventBase {
   type: "validation_complete";
   report: TraceabilityReport;
 }
 
-// Validation error
 export interface ValidationErrorEvent extends SSEEventBase {
   type: "validation_error";
   message: string;
@@ -185,16 +150,13 @@ export type SSEEvent =
   | PhaseStartEvent
   | PhaseCompleteEvent
   | ScreenshotEvent
-  | PlanCreatedEvent
-  | StepStartEvent
-  | StepCompleteEvent
+  | ScenarioStartEvent
+  | ScenarioCompleteEvent
+  | ScenariosGeneratedEvent
   | CompleteEvent
   | ErrorEvent
   | LogEvent
   | SitemapEvent
-  | PageStartEvent
-  | PageCompleteEvent
-  | PagesProgressEvent
   // Validation events
   | ValidationPhaseStartEvent
   | ValidationPhaseCompleteEvent

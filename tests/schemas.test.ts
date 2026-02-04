@@ -1,74 +1,90 @@
 import { describe, it, expect } from "bun:test";
 import {
-  PlanSchema,
   ReportSchema,
-  safeParsePlan,
   safeParseReport,
-  validatePlan,
   validateReport,
+  TestScenarioSchema,
+  AgentActionSchema,
 } from "../src/qa/schemas.js";
 
-describe("PlanSchema", () => {
-  it("should validate a valid plan", () => {
-    const plan = {
-      url: "https://example.com",
-      steps: [
-        { type: "open", selector: "https://example.com", note: "Open homepage" },
-        { type: "snapshot", note: "Capture initial state" },
-        { type: "click", selector: "@e1", note: "Click main button" },
-        { type: "fill", selector: "@e2", text: "test@example.com", note: "Fill email" },
-        { type: "press", key: "Tab", note: "Tab to next field" },
-        { type: "screenshot", path: "test.png", note: "Take screenshot" },
-      ],
+describe("TestScenarioSchema", () => {
+  it("should validate a valid scenario", () => {
+    const scenario = {
+      id: "login-form-validation",
+      title: "Login form rejects empty email",
+      description: "Test that submitting empty email shows validation error",
+      startUrl: "https://example.com/login",
+      priority: "high",
+      category: "forms",
+      maxSteps: 10,
     };
 
-    const result = safeParsePlan(plan);
+    const result = TestScenarioSchema.safeParse(scenario);
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.url).toBe("https://example.com");
-      expect(result.data.steps).toHaveLength(6);
-    }
   });
 
-  it("should reject invalid URL", () => {
-    const plan = {
-      url: "not-a-url",
-      steps: [],
+  it("should reject invalid priority", () => {
+    const scenario = {
+      id: "test",
+      title: "Test",
+      description: "Test",
+      startUrl: "https://example.com",
+      priority: "urgent",
+      category: "forms",
+      maxSteps: 10,
     };
 
-    const result = safeParsePlan(plan);
+    const result = TestScenarioSchema.safeParse(scenario);
     expect(result.success).toBe(false);
   });
 
-  it("should reject too many steps", () => {
-    const steps = Array(21).fill({ type: "snapshot" });
-    const plan = {
-      url: "https://example.com",
-      steps,
+  it("should reject maxSteps over 50", () => {
+    const scenario = {
+      id: "test",
+      title: "Test",
+      description: "Test",
+      startUrl: "https://example.com",
+      priority: "medium",
+      category: "forms",
+      maxSteps: 100,
     };
 
-    const result = safeParsePlan(plan);
+    const result = TestScenarioSchema.safeParse(scenario);
     expect(result.success).toBe(false);
   });
+});
 
-  it("should reject invalid step type", () => {
-    const plan = {
-      url: "https://example.com",
-      steps: [{ type: "invalid" }],
+describe("AgentActionSchema", () => {
+  it("should validate a click action", () => {
+    const action = {
+      type: "click",
+      selector: "button:has-text('Submit')",
+      reasoning: "Click the submit button to test form validation",
     };
 
-    const result = safeParsePlan(plan);
-    expect(result.success).toBe(false);
-  });
-
-  it("should allow optional fields", () => {
-    const plan = {
-      url: "https://example.com",
-      steps: [{ type: "snapshot" }],
-    };
-
-    const result = safeParsePlan(plan);
+    const result = AgentActionSchema.safeParse(action);
     expect(result.success).toBe(true);
+  });
+
+  it("should validate a done action with result", () => {
+    const action = {
+      type: "done",
+      reasoning: "Form validation works correctly",
+      result: "pass",
+    };
+
+    const result = AgentActionSchema.safeParse(action);
+    expect(result.success).toBe(true);
+  });
+
+  it("should reject invalid action type", () => {
+    const action = {
+      type: "drag",
+      reasoning: "Drag element",
+    };
+
+    const result = AgentActionSchema.safeParse(action);
+    expect(result.success).toBe(false);
   });
 });
 
@@ -158,31 +174,6 @@ describe("ReportSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should reject invalid category", () => {
-    const report = {
-      url: "https://example.com",
-      testedFlows: [],
-      score: 50,
-      summary: "Test",
-      issues: [
-        {
-          severity: "low",
-          title: "Test",
-          category: "InvalidCategory",
-          reproSteps: [],
-          expected: "",
-          actual: "",
-          evidence: [],
-          suggestedFix: "",
-        },
-      ],
-      artifacts: { screenshots: [], evidenceFile: "" },
-    };
-
-    const result = safeParseReport(report);
-    expect(result.success).toBe(false);
-  });
-
   it("should validate all valid severities", () => {
     const severities = ["blocker", "high", "medium", "low", "nit"] as const;
 
@@ -239,18 +230,6 @@ describe("ReportSchema", () => {
       const result = safeParseReport(report);
       expect(result.success).toBe(true);
     }
-  });
-});
-
-describe("validatePlan", () => {
-  it("should throw on invalid plan", () => {
-    expect(() => validatePlan({ url: "not-valid" })).toThrow();
-  });
-
-  it("should return valid plan", () => {
-    const plan = { url: "https://example.com", steps: [] };
-    const result = validatePlan(plan);
-    expect(result.url).toBe("https://example.com");
   });
 });
 

@@ -1,33 +1,34 @@
 import { z } from "zod";
 
-export const StepTypeSchema = z.enum([
-  "open",
-  "snapshot",
-  "click",
-  "fill",
-  "press",
-  "getText",
-  "screenshot",
-]);
+// =============================================================================
+// Test Scenario Schema
+// =============================================================================
 
-export const StepSchema = z.object({
-  type: StepTypeSchema,
+export const TestScenarioSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  startUrl: z.string(),
+  priority: z.enum(["critical", "high", "medium", "low"]),
+  category: z.enum(["forms", "navigation", "auth", "content", "interaction", "e2e"]),
+  maxSteps: z.number().min(1).max(50),
+});
+
+// =============================================================================
+// Agent Action Schema
+// =============================================================================
+
+export const AgentActionSchema = z.object({
+  type: z.enum(["click", "fill", "press", "hover", "scroll", "navigate", "wait", "assert", "done"]),
   selector: z.string().optional(),
-  text: z.string().optional(),
-  key: z.string().optional(),
-  path: z.string().optional(),
-  note: z.string().optional(),
+  value: z.string().optional(),
+  reasoning: z.string(),
+  result: z.enum(["pass", "fail"]).optional(),
 });
 
-export const PlanSchema = z.object({
-  url: z.string().url(),
-  steps: z.array(StepSchema).max(20),
-});
-
-// Schema for per-page test plan (no URL required, fewer steps)
-export const PagePlanSchema = z.object({
-  steps: z.array(StepSchema).max(10),
-});
+// =============================================================================
+// Report Schema (for LLM output validation)
+// =============================================================================
 
 export const IssueSeveritySchema = z.enum(["blocker", "high", "medium", "low", "nit"]);
 
@@ -63,35 +64,11 @@ export const ReportSchema = z.object({
   }),
 });
 
-export type PlanInput = z.input<typeof PlanSchema>;
-export type PlanOutput = z.output<typeof PlanSchema>;
-export type PagePlanInput = z.input<typeof PagePlanSchema>;
-export type PagePlanOutput = z.output<typeof PagePlanSchema>;
 export type ReportInput = z.input<typeof ReportSchema>;
 export type ReportOutput = z.output<typeof ReportSchema>;
 
-export function validatePlan(data: unknown): PlanOutput {
-  return PlanSchema.parse(data);
-}
-
 export function validateReport(data: unknown): ReportOutput {
   return ReportSchema.parse(data);
-}
-
-export function safeParsePlan(data: unknown): { success: true; data: PlanOutput } | { success: false; error: z.ZodError } {
-  const result = PlanSchema.safeParse(data);
-  if (result.success) {
-    return { success: true, data: result.data };
-  }
-  return { success: false, error: result.error };
-}
-
-export function safeParsePagePlan(data: unknown): { success: true; data: PagePlanOutput } | { success: false; error: z.ZodError } {
-  const result = PagePlanSchema.safeParse(data);
-  if (result.success) {
-    return { success: true, data: result.data };
-  }
-  return { success: false, error: result.error };
 }
 
 export function safeParseReport(data: unknown): { success: true; data: ReportOutput } | { success: false; error: z.ZodError } {

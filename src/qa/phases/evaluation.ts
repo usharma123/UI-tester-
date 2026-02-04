@@ -37,20 +37,13 @@ export async function runEvaluationPhase(options: EvaluationPhaseOptions): Promi
     },
   };
 
-  const issuesWithUrls = reportWithUrls.issues.map((issue) => ({
+  reportWithUrls.issues = reportWithUrls.issues.map((issue) => ({
     ...issue,
     evidence: issue.evidence.map((path) => screenshotUrlMap[path] || path),
   }));
-  reportWithUrls.issues = issuesWithUrls;
 
   const evidenceWithUrls: Evidence = {
     ...evidence,
-    audits: evidence.audits?.map((audit) => ({
-      ...audit,
-      screenshotPath: audit.screenshotPath
-        ? screenshotUrlMap[audit.screenshotPath] || audit.screenshotPath
-        : undefined,
-    })),
     screenshotMap: Object.fromEntries(
       Object.entries(evidence.screenshotMap).map(([path, idx]) => [
         screenshotUrlMap[path] || path,

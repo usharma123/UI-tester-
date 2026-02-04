@@ -1,11 +1,8 @@
-import type { Report, Evidence, Step, ExecutedStepStatus } from "../qa/types.js";
+import type { Report, Evidence, TestStatus } from "../qa/types.js";
 import type { QAPhase, SSEEvent, SitemapUrl } from "../qa/progress-types.js";
 
-// Exploration mode selection
-export type ExplorationMode = "coverage_guided" | "parallel" | "llm_guided";
-
 // App state machine
-export type AppMode = "setup" | "input" | "mode_select" | "running" | "complete" | "error";
+export type AppMode = "setup" | "input" | "running" | "complete" | "error";
 
 // Task status for UI display
 export type TaskStatus = "pending" | "running" | "success" | "failed" | "skipped";
@@ -19,13 +16,12 @@ export interface Task {
   children?: Task[];
 }
 
-// Page testing progress
-export interface PageProgress {
-  url: string;
-  pageIndex: number;
+// Scenario progress tracking
+export interface ScenarioProgress {
+  scenarioId: string;
+  title: string;
+  index: number;
   status: TaskStatus;
-  stepsExecuted?: number;
-  error?: string;
 }
 
 // Main app state
@@ -33,7 +29,6 @@ export interface AppState {
   mode: AppMode;
   url: string;
   goals: string;
-  explorationMode: ExplorationMode;
 
   // Phase tracking
   currentPhase: QAPhase | null;
@@ -46,23 +41,9 @@ export interface AppState {
   sitemap: SitemapUrl[];
   sitemapSource: string;
 
-  // Page testing progress
-  pages: PageProgress[];
-  pagesProgress: {
-    tested: number;
-    skipped: number;
-    remaining: number;
-    total: number;
-  };
-
-  // Step execution
-  currentStep: {
-    index: number;
-    step: Step;
-    totalSteps: number;
-  } | null;
-  executedSteps: number;
-  totalSteps: number;
+  // Scenario tracking
+  scenarios: ScenarioProgress[];
+  totalScenarios: number;
 
   // Logs
   logs: Array<{
@@ -85,22 +66,13 @@ export const initialState: AppState = {
   mode: "input",
   url: "",
   goals: "",
-  explorationMode: "coverage_guided",
   currentPhase: null,
   completedPhases: [],
   tasks: [],
   sitemap: [],
   sitemapSource: "",
-  pages: [],
-  pagesProgress: {
-    tested: 0,
-    skipped: 0,
-    remaining: 0,
-    total: 0,
-  },
-  currentStep: null,
-  executedSteps: 0,
-  totalSteps: 0,
+  scenarios: [],
+  totalScenarios: 0,
   logs: [],
   logScrollOffset: 0,
   report: null,
@@ -113,7 +85,6 @@ export type AppAction =
   | { type: "SET_MODE"; mode: AppMode }
   | { type: "SET_URL"; url: string }
   | { type: "SET_GOALS"; goals: string }
-  | { type: "SET_EXPLORATION_MODE"; explorationMode: ExplorationMode }
   | { type: "START_RUN" }
   | { type: "PROCESS_EVENT"; event: SSEEvent }
   | { type: "SET_ERROR"; error: string }

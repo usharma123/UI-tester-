@@ -1,60 +1,57 @@
-// Import types needed locally
-import type { CoverageStats as CoverageStatsType } from "./coverage.js";
-import type { BudgetStatus as BudgetStatusType } from "./budget.js";
+// =============================================================================
+// Core QA Types — Agent-based testing pipeline
+// =============================================================================
 
-export type StepType = "open" | "snapshot" | "click" | "fill" | "press" | "getText" | "screenshot" | "hover";
+export interface TestScenario {
+  id: string;
+  title: string;
+  description: string;
+  startUrl: string;
+  priority: "critical" | "high" | "medium" | "low";
+  category: "forms" | "navigation" | "auth" | "content" | "interaction" | "e2e";
+  maxSteps: number;
+}
 
-export interface Step {
-  type: StepType;
+export type AgentActionType =
+  | "click"
+  | "fill"
+  | "press"
+  | "hover"
+  | "scroll"
+  | "navigate"
+  | "wait"
+  | "assert"
+  | "done";
+
+export interface AgentAction {
+  type: AgentActionType;
   selector?: string;
-  text?: string;
-  key?: string;
-  path?: string;
-  note?: string;
+  value?: string;
+  reasoning: string;
+  result?: "pass" | "fail";
 }
 
-// ============================================================================
-// Re-exports from new modules
-// ============================================================================
-
-export type {
-  StateFingerprint,
-  StateTransition,
-  StateHistory,
-  StateTracker,
-} from "./state.js";
-
-export type {
-  BudgetConfig,
-  BudgetStatus,
-  BudgetExhaustionReason,
-  BudgetEvent,
-  BudgetTracker,
-} from "./budget.js";
-
-export type {
-  CoverageMetrics,
-  CoverageSnapshot,
-  CoverageGain,
-  ActionOutcome,
-  CoverageTracker,
-  CoverageStats,
-  CoverageRecommendation,
-} from "./coverage.js";
-
-export { createStateTracker, captureStateFingerprint, fingerprintsEqual, fingerprintSimilarity } from "./state.js";
-export { createBudgetTracker, DEFAULT_BUDGET_CONFIG, estimateBudget, formatBudgetStatus, formatExhaustionReason } from "./budget.js";
-export { createCoverageTracker, collectPageCoverage, getCoverageRecommendations, formatCoverageStats } from "./coverage.js";
-
-export interface Plan {
-  url: string;
-  steps: Step[];
+export interface AgentStep {
+  index: number;
+  action: AgentAction;
+  success: boolean;
+  error?: string;
+  screenshotPath?: string;
+  timestamp: number;
 }
 
-export interface PagePlan {
-  steps: Step[];
+export type TestStatus = "pass" | "fail" | "error" | "skip";
+
+export interface TestResult {
+  scenario: TestScenario;
+  status: TestStatus;
+  steps: AgentStep[];
+  summary: string;
+  evidence: { screenshots: string[] };
+  durationMs: number;
 }
 
+// Issue types for the final report (kept for backward compat with storage/report generation)
 export type IssueSeverity = "blocker" | "high" | "medium" | "low" | "nit";
 
 export type IssueCategory = "Navigation" | "Forms" | "Accessibility" | "Visual" | "Feedback" | "Content";
@@ -84,111 +81,18 @@ export interface Report {
   };
 }
 
-export type ExecutedStepStatus = "success" | "failed" | "blocked";
-
-export interface ExecutedStep {
-  index: number;
-  step: Step;
-  status: ExecutedStepStatus;
-  result?: string;
-  error?: string;
-  screenshotPath?: string;
-  timestamp: number;
-  /** State fingerprint before the action (if tracked) */
-  stateBeforeFingerprint?: string;
-  /** State fingerprint after the action (if tracked) */
-  stateAfterFingerprint?: string;
-  /** Coverage gain from this step (if tracked) */
-  coverageGain?: number;
-  /** Whether this step led to a new state */
-  isNewState?: boolean;
-}
-
-export interface SnapshotEntry {
-  stepIndex: number;
-  content: string;
-}
-
-export interface ErrorEntry {
-  stepIndex: number;
-  error: string;
-}
-
-export interface ViewportInfo {
-  width: number;
-  height: number;
-  devicePixelRatio: number;
-}
-
-export interface DomAuditSample {
-  selector: string;
-  text?: string;
-}
-
-export interface DomAuditSummary {
-  imagesMissingAlt: number;
-  inputsMissingLabel: number;
-  buttonsMissingLabel: number;
-  linksGenericText: number;
-  emptyHeadings: number;
-  headingOrderIssues: number;
-  h1Count: number;
-  smallTouchTargets: number;
-  htmlLangMissing: boolean;
-  horizontalOverflowPx: number;
-}
-
-export interface DomAuditSamples {
-  imagesMissingAlt: DomAuditSample[];
-  inputsMissingLabel: DomAuditSample[];
-  buttonsMissingLabel: DomAuditSample[];
-  linksGenericText: DomAuditSample[];
-  emptyHeadings: DomAuditSample[];
-  headingOrderIssues: DomAuditSample[];
-  smallTouchTargets: DomAuditSample[];
-}
-
-export interface DomAuditResult {
-  pageUrl: string;
-  label: string;
-  viewport: ViewportInfo;
-  summary: DomAuditSummary;
-  samples: DomAuditSamples;
-  timestamp: number;
-}
-
-export interface AuditEntry extends DomAuditResult {
-  screenshotPath?: string;
-}
-
-export interface Evidence {
-  plan: Plan;
-  executedSteps: ExecutedStep[];
-  snapshots: SnapshotEntry[];
-  errors: ErrorEntry[];
-  screenshotMap: Record<string, number>;
-  audits?: AuditEntry[];
-  /** Coverage statistics (if coverage tracking was enabled) */
-  coverageStats?: CoverageStatsType;
-  /** Budget status at end of run (if budget tracking was enabled) */
-  budgetStatus?: BudgetStatusType;
-  /** Number of unique states visited */
-  uniqueStatesVisited?: number;
-  /** Exploration mode used */
-  explorationMode?: ExplorationMode;
-}
-
-// ============================================================================
-// Exploration Types
-// ============================================================================
-
-export type ExplorationMode = "coverage_guided" | "breadth_first" | "depth_first" | "random";
-
-export interface RunContext {
+export interface QAReport {
   url: string;
-  goals: string;
-  maxSteps: number;
   timestamp: string;
-  screenshotDir: string;
-  reportDir: string;
+  scenarios: TestResult[];
+  summary: string;
+  overallScore: number;
+  issueCount: { critical: number; high: number; medium: number; low: number };
 }
+
+// Evidence type for evaluation / local storage
+export interface Evidence {
+  scenarios: TestResult[];
+  screenshotMap: Record<string, string>;
+}
+

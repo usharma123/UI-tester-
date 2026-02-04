@@ -5,12 +5,10 @@ import { initialState } from "../types.js";
 export const LOG_LINES = 6;
 
 const phaseLabels: Record<QAPhase, string> = {
-  init: "Initializing browser",
-  discovery: "Discovering site structure",
-  planning: "Creating test plan",
-  traversal: "Testing pages",
-  execution: "Executing additional tests",
-  evaluation: "Evaluating results",
+  discovery: "Discovering site pages",
+  analysis: "Analyzing pages for test scenarios",
+  execution: "Running test scenarios",
+  evaluation: "Generating QA report",
 };
 
 function createPhaseTask(phase: QAPhase, status: TaskStatus, detail?: string): Task {
@@ -33,9 +31,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_GOALS":
       return { ...state, goals: action.goals };
 
-    case "SET_EXPLORATION_MODE":
-      return { ...state, explorationMode: action.explorationMode };
-
     case "START_RUN":
       return {
         ...state,
@@ -47,11 +42,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         currentPhase: null,
         completedPhases: [],
         sitemap: [],
-        pages: [],
-        pagesProgress: { tested: 0, skipped: 0, remaining: 0, total: 0 },
-        currentStep: null,
-        executedSteps: 0,
-        totalSteps: 0,
+        scenarios: [],
+        totalScenarios: 0,
         report: null,
         evidence: null,
       };
@@ -60,7 +52,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, mode: "error", error: action.error };
 
     case "RESET":
-      return { ...initialState, url: state.url, goals: state.goals, explorationMode: state.explorationMode };
+      return { ...initialState, url: state.url, goals: state.goals };
 
     case "PROCESS_EVENT":
       return processEvent(state, action.event);
@@ -111,84 +103,36 @@ export function processEvent(state: AppState, event: SSEEvent): AppState {
         ...state,
         sitemap: event.urls,
         sitemapSource: event.source,
-        pagesProgress: {
-          ...state.pagesProgress,
-          total: event.totalPages,
-          remaining: event.totalPages,
-        },
       };
     }
 
-    case "plan_created": {
+    case "scenarios_generated": {
       return {
         ...state,
-        totalSteps: event.totalSteps,
+        totalScenarios: event.totalScenarios,
       };
     }
 
-    case "page_start": {
-      const newPages = [...state.pages];
-      const existingIndex = newPages.findIndex((p) => p.pageIndex === event.pageIndex);
-      if (existingIndex >= 0) {
-        newPages[existingIndex] = {
-          ...newPages[existingIndex],
-          status: "running",
-        };
-      } else {
-        newPages.push({
-          url: event.url,
-          pageIndex: event.pageIndex,
-          status: "running",
-        });
+    case "scenario_start": {
+      const newScenarios = [...state.scenarios];
+      newScenarios.push({
+        scenarioId: event.scenarioId,
+        title: event.title,
+        index: event.index,
+        status: "running",
+      });
+      return { ...state, scenarios: newScenarios };
+    }
+
+    case "scenario_complete": {
+      const newScenarios = [...state.scenarios];
+      const idx = newScenarios.findIndex((s) => s.scenarioId === event.scenarioId);
+      if (idx >= 0) {
+        const status: TaskStatus =
+          event.status === "pass" ? "success" : event.status === "fail" ? "failed" : "failed";
+        newScenarios[idx] = { ...newScenarios[idx], status };
       }
-      return { ...state, pages: newPages };
-    }
-
-    case "page_complete": {
-      const newPages = [...state.pages];
-      const existingIndex = newPages.findIndex((p) => p.pageIndex === event.pageIndex);
-      const status: TaskStatus =
-        event.status === "success" ? "success" : event.status === "skipped" ? "skipped" : "failed";
-      if (existingIndex >= 0) {
-        newPages[existingIndex] = {
-          ...newPages[existingIndex],
-          status,
-          stepsExecuted: event.stepsExecuted,
-          error: event.error,
-        };
-      }
-      return { ...state, pages: newPages };
-    }
-
-    case "pages_progress": {
-      return {
-        ...state,
-        pagesProgress: {
-          tested: event.tested,
-          skipped: event.skipped,
-          remaining: event.remaining,
-          total: event.total,
-        },
-      };
-    }
-
-    case "step_start": {
-      return {
-        ...state,
-        currentStep: {
-          index: event.stepIndex,
-          step: event.step,
-          totalSteps: event.totalSteps,
-        },
-      };
-    }
-
-    case "step_complete": {
-      return {
-        ...state,
-        executedSteps: state.executedSteps + 1,
-        currentStep: null,
-      };
+      return { ...state, scenarios: newScenarios };
     }
 
     case "log": {
