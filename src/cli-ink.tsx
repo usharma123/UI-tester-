@@ -8,7 +8,7 @@ import { ValidateApp } from "./ink/ValidateApp.js";
 import { checkForUpdates } from "./updates/index.js";
 import type { UpdateInfo } from "./updates/types.js";
 
-const PACKAGE_VERSION = "1.0.1";
+const PACKAGE_VERSION = "2.0.0";
 
 const parsed = parseArgs();
 

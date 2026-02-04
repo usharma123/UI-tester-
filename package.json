@@ -1,6 +1,6 @@
 {
   "name": "@usharma124/ui-qa",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "AI-powered UI/UX testing CLI with beautiful TUI",
   "type": "module",
   "bin": {
