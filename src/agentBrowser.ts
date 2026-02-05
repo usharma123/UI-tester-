@@ -120,6 +120,7 @@ export interface AgentBrowser {
   snapshot(): Promise<string>;
   click(refOrSelector: string): Promise<void>;
   fill(refOrSelector: string, text: string): Promise<void>;
+  selectOption(selector: string, value: string): Promise<void>;
   press(key: string): Promise<void>;
   hover(refOrSelector: string): Promise<void>;
   getText(refOrSelector: string): Promise<string>;
@@ -259,6 +260,8 @@ const SNAPSHOT_SCRIPT = `
     var ariaLabel = el.getAttribute("aria-label") || "";
 
     var info = indent + "<" + tag;
+    var elId = el.id || "";
+    if (elId) info += ' id="' + elId + '"';
     if (role) info += ' role="' + role + '"';
     if (ariaLabel) info += ' aria-label="' + ariaLabel + '"';
     if (el.tagName === "INPUT") {
@@ -271,11 +274,19 @@ const SNAPSHOT_SCRIPT = `
     if (el.tagName === "BUTTON") {
       info += ' type="' + (el.type || "button") + '"';
     }
+    if (el.tagName === "OPTION") {
+      info += ' value="' + (el.value || "") + '"';
+      if (el.selected) info += ' selected';
+    }
+    if (el.tagName === "SELECT") {
+      var selName = el.getAttribute('name');
+      if (selName !== null) info += ' name="' + selName + '"';
+    }
     info += ">";
 
     var includeText = false;
     if (text) {
-      var textTags = ["a", "button", "label", "h1", "h2", "h3", "h4", "h5", "h6"];
+      var textTags = ["a", "button", "label", "option", "select", "h1", "h2", "h3", "h4", "h5", "h6"];
       if (textTags.indexOf(tag) !== -1) {
         includeText = true;
       } else if (el.getAttribute && el.getAttribute("role")) {
@@ -292,7 +303,7 @@ const SNAPSHOT_SCRIPT = `
 
   function walkDOM(node, depth) {
     var lines = [];
-    var interactiveTags = ["a", "button", "input", "select", "textarea", "form", "nav", "main", "header", "footer", "h1", "h2", "h3", "h4", "h5", "h6"];
+    var interactiveTags = ["a", "button", "input", "select", "option", "textarea", "form", "nav", "main", "header", "footer", "h1", "h2", "h3", "h4", "h5", "h6"];
     var tag = node.tagName ? node.tagName.toLowerCase() : "";
 
     if (interactiveTags.indexOf(tag) !== -1 || node.getAttribute && node.getAttribute("role")) {
@@ -443,8 +454,14 @@ const PAGE_SNAPSHOT_SCRIPT = `
   });
   
   // Create a simple DOM structure hash
-  const tags = Array.from(body.querySelectorAll('*')).slice(0, 500)
-    .map(el => el.tagName + (el.id ? '#' + el.id : '')).join(',');
+  const tags = Array.from(body.querySelectorAll('*')).slice(0, 2000)
+    .map(el => {
+      let s = el.tagName + (el.id ? '#' + el.id : '');
+      if (el.tagName === 'SELECT' || el.tagName === 'INPUT') {
+        s += '=' + (el.value || '');
+      }
+      return s;
+    }).join(',');
   const domHash = simpleHash(tags);
   
   const html = document.documentElement;
@@ -582,6 +599,19 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
 
       if (options.debug) {
         console.log(`[playwright] Filled: ${selector} with "${text}"`);
+      }
+    },
+
+    async selectOption(selector: string, value: string): Promise<void> {
+      const normalizedSelector = normalizeSelector(selector);
+      await withRetry(async () => {
+        const p = await ensurePage();
+        await p.selectOption(normalizedSelector, { label: value }, { timeout: actionTimeout })
+          .catch(() => p.selectOption(normalizedSelector, { value: value }, { timeout: actionTimeout }));
+      }, options, 1);
+
+      if (options.debug) {
+        console.log(`[playwright] Selected option: "${value}" in ${selector}`);
       }
     },
 
@@ -832,13 +862,11 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
         const elementDiff = Math.abs(afterSnapshot.elementCount - beforeSnapshot.elementCount);
         const textDiff = Math.abs(afterSnapshot.textLength - beforeSnapshot.textLength);
 
-        if (elementDiff > 5 || textDiff > 100) {
-          return {
-            type: "dom_changed",
-            details: `DOM changed: ${elementDiff} elements, ${textDiff} text chars`,
-            success: true,
-          };
-        }
+        return {
+          type: "dom_changed",
+          details: `DOM changed: ${elementDiff} elements, ${textDiff} text chars`,
+          success: true,
+        };
       }
 
       // No significant change detected

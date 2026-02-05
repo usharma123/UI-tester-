@@ -171,8 +171,8 @@ export function processValidationEvent(
       dispatch({
         type: "SET_REPORT",
         report: event.report,
-        reportPath: "",
-        markdownPath: "",
+        reportPath: event.reportPath,
+        markdownPath: event.markdownPath,
       });
       break;
 

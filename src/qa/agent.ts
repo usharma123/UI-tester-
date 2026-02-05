@@ -157,7 +157,7 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
 
       if (beforeSnapshot && afterSnapshot) {
         const outcome = browser.detectActionOutcome(beforeSnapshot, afterSnapshot);
-        const shouldChange = action.type === "click" || action.type === "navigate";
+        const shouldChange = action.type === "click" || action.type === "navigate" || action.type === "select";
         if (shouldChange && outcome.type === "no_change") {
           let allowNoChange = false;
 
@@ -299,6 +299,11 @@ async function executeAction(
       if (!action.selector) throw new Error("fill requires a selector");
       await browser.fill(action.selector, action.value ?? "");
       break;
+    case "select":
+      if (!action.selector) throw new Error("select requires a selector");
+      if (!action.value) throw new Error("select requires a value");
+      await browser.selectOption(action.selector, action.value);
+      break;
     case "press":
       await browser.press(action.value ?? "Enter");
       break;
@@ -343,6 +348,8 @@ function formatAction(action: AgentAction): string {
       return `click(${action.selector})`;
     case "fill":
       return `fill(${action.selector}, "${action.value}")`;
+    case "select":
+      return `select(${action.selector}, "${action.value}")`;
     case "press":
       return `press(${action.value})`;
     case "hover":

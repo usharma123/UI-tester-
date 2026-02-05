@@ -49,6 +49,8 @@ export async function runReportingPhase(options: ReportingPhaseOptions): Promise
   emit(onProgress, {
     type: "validation_complete",
     report,
+    reportPath,
+    markdownPath,
   });
 
   emitValidationPhaseComplete(onProgress, "reporting");

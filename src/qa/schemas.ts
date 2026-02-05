@@ -19,7 +19,7 @@ export const TestScenarioSchema = z.object({
 // =============================================================================
 
 export const AgentActionSchema = z.object({
-  type: z.enum(["click", "fill", "press", "hover", "scroll", "navigate", "wait", "assert", "done"]),
+  type: z.enum(["click", "fill", "select", "press", "hover", "scroll", "navigate", "wait", "assert", "done"]),
   selector: z.string().optional(),
   value: z.string().optional(),
   reasoning: z.string(),

@@ -56,9 +56,9 @@ At each step, you see:
 
 Output ONLY valid JSON:
 {
-  "type": "click" | "fill" | "press" | "hover" | "scroll" | "navigate" | "wait" | "assert" | "done",
+  "type": "click" | "fill" | "select" | "press" | "hover" | "scroll" | "navigate" | "wait" | "assert" | "done",
   "selector": "CSS selector or text selector (for click/fill/hover)",
-  "value": "text to type (for fill), URL (for navigate), key name (for press), assertion description (for assert)",
+  "value": "text to type (for fill), option text to select (for select), URL (for navigate), key name (for press), assertion description (for assert)",
   "reasoning": "Brief explanation (1-2 sentences)",
   "result": "pass" | "fail" (ONLY when type is "done")
 }
@@ -66,6 +66,7 @@ Output ONLY valid JSON:
 Action types:
 - click: Click an element. Use selector like "button:has-text('Submit')" or CSS selectors
 - fill: Type text into an input. Requires selector and value
+- select: Select an option from a <select> dropdown. selector = the <select> element, value = option text to select
 - press: Press a keyboard key (e.g. "Enter", "Tab", "Escape")
 - hover: Hover over an element
 - scroll: Scroll the page (value: "up" or "down")  
@@ -82,10 +83,12 @@ CRITICAL RULES:
 5. FAIL FAST: If something is clearly broken, use "done" with "fail" - don't keep investigating.
 6. SELECTOR STRATEGY: Prefer text selectors like button:has-text("X") over complex CSS.
 7. ONE VERIFICATION: A single assert or click that shows the feature works is enough - move on.
+8. USE SELECT FOR DROPDOWNS: For <select> elements, ALWAYS use "select" action, NOT "click" on options.
 
 Example of efficient testing:
 - To test a theme toggle: click toggle → verify color changed → done(pass). That's 2-3 steps max.
 - To test navigation: click link → verify new page title → done(pass). That's 2-3 steps max.
+- To test a dropdown: select(selector, value) → verify selection → done(pass). That's 2-3 steps max.
 
 Output ONLY valid JSON, no markdown.`;
 

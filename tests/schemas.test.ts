@@ -77,6 +77,18 @@ describe("AgentActionSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("should validate a select action", () => {
+    const action = {
+      type: "select",
+      selector: "select#currency",
+      value: "USD",
+      reasoning: "Select USD from the currency dropdown",
+    };
+
+    const result = AgentActionSchema.safeParse(action);
+    expect(result.success).toBe(true);
+  });
+
   it("should reject invalid action type", () => {
     const action = {
       type: "drag",

@@ -17,6 +17,7 @@ export interface TestScenario {
 export type AgentActionType =
   | "click"
   | "fill"
+  | "select"
   | "press"
   | "hover"
   | "scroll"

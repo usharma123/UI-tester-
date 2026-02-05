@@ -143,6 +143,8 @@ export interface RequirementValidatedEvent extends SSEEventBase {
 export interface ValidationCompleteEvent extends SSEEventBase {
   type: "validation_complete";
   report: TraceabilityReport;
+  reportPath: string;
+  markdownPath: string;
 }
 
 export interface ValidationErrorEvent extends SSEEventBase {
