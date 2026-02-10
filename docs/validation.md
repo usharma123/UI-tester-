@@ -129,6 +129,7 @@ Runs tests with browser automation:
 - Captures screenshots as evidence
 - Records all interactions and outcomes
 - Handles errors gracefully
+- Emits heartbeat progress logs during long scenario batches
 
 **Output**: Test execution summary with screenshots
 
@@ -140,6 +141,7 @@ Validates test results against requirements:
 - Scores each requirement (0-100)
 - Links evidence screenshots to requirements
 - Provides reasoning for each verdict
+- Retries invalid/timeout LLM responses and emits elapsed-time heartbeat logs
 
 **Output**: Requirement validation results
 
@@ -158,13 +160,22 @@ Generates traceability report:
 
 ### Output Files
 
-Reports are saved to the output directory (`--output`, default: `./reports`) as timestamped files:
+Validation mode writes streaming run artifacts to `.ui-qa-runs/validation-<run-id>/` and reports to the output directory (`--output`, default: `./reports`) as timestamped files:
+
+```
+.ui-qa-runs/
+└── validation-1234567890/
+    ├── events.jsonl
+    └── run.json
+```
 
 ```
 reports/
 ├── traceability-report-2026-02-04T12-34-56.json
 └── traceability-report-2026-02-04T12-34-56.md
 ```
+
+`events.jsonl` is enabled by default and contains phase logs (`parsing`, `extraction`, `execution`, `cross_validation`, `reporting`) plus requirement-level validation events.
 
 Evidence entries in the report reference screenshot file paths captured during the run.
 
@@ -281,6 +292,9 @@ Additional validation-specific settings:
 |----------|---------|-------------|
 | `MAX_PAGES` | `50` | Maximum pages to discover and test |
 | `PARALLEL_BROWSERS` | `5` | Concurrent browser instances |
+| `SCENARIO_TIMEOUT_MS` | `max(BROWSER_TIMEOUT * 4, 180000)` | Max runtime per validation scenario |
+| `CROSS_VALIDATION_TIMEOUT_MS` | `LLM_TIMEOUT_MS` or `90000` fallback | Timeout for cross-validation LLM request |
+| `JSON_LOGS` | `true` | Writes `.ui-qa-runs/validation-<run-id>/events.jsonl` (`false` to disable) |
 
 ## Troubleshooting
 

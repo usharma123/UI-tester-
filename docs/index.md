@@ -28,7 +28,7 @@ features:
   - title: Scored Reports + LLM Fix Guide
     details: Generates a scored report and a plain-text fix guide for LLMs
   - title: Local Run History
-    details: Stores runs in .ui-qa-runs with run.json, report.md, and screenshots
+    details: Stores runs in .ui-qa-runs with events.jsonl, run.json, report.md, and screenshots
   - title: TUI Progress + Logs
     details: Live terminal UI with phases, progress bars, and log streaming
   - title: Update Notifications
@@ -92,4 +92,4 @@ Validates websites against specification documents through eight phases:
 └─────────────────────────────────────────┘
 ```
 
-Results include markdown reports, run metadata, and screenshots saved to `.ui-qa-runs/`.
+Results include markdown reports, run metadata, streaming JSON logs, and screenshots saved to `.ui-qa-runs/`.

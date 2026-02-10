@@ -101,15 +101,18 @@ npx @usharma124/ui-qa validate --spec requirements.md --url https://app.example.
 
 | File | Contents |
 |------|----------|
+| `events.jsonl` | Streaming JSON event log for the run |
 | `run.json` | Run metadata plus embedded report and evidence |
 | `report.md` | Human-readable report |
 | `llm-fix.txt` | Plain-text fix guide for LLMs |
 | `screenshots/` | Visual evidence |
 
-**Validation Mode** - Results in the output directory (default: `./reports`):
+**Validation Mode** - Run artifacts in `.ui-qa-runs/validation-<run-id>/` and reports in output directory (default: `./reports`):
 
 | File | Contents |
 |------|----------|
+| `.ui-qa-runs/validation-<run-id>/events.jsonl` | Streaming phase-by-phase validation events |
+| `.ui-qa-runs/validation-<run-id>/run.json` | Validation run metadata |
 | `traceability-report-<timestamp>.json` | Full validation report |
 | `traceability-report-<timestamp>.md` | Human-readable summary |
 

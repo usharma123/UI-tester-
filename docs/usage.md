@@ -17,6 +17,7 @@ ui-qa [url] [options]
 | Option | Description |
 |--------|-------------|
 | `--goals`, `-g <string>` | Testing objectives (overrides environment variable) |
+| `--json-logs` | Force JSON event logs (enabled by default; set `JSON_LOGS=false` to disable) |
 | `--help`, `-h` | Display help |
 
 ### Validation Mode
@@ -32,6 +33,7 @@ ui-qa validate --spec <file> --url <url> [options]
 | `--spec`, `-s <file>` | Path to requirements/specification file (required) |
 | `--url`, `-u <url>` | URL to validate against (required) |
 | `--output`, `-o <dir>` | Output directory for reports (default: ./reports) |
+| `--json-logs` | Force JSON event logs (enabled by default; set `JSON_LOGS=false` to disable) |
 | `--help`, `-h` | Display help |
 
 ### Examples
@@ -157,6 +159,7 @@ Runs tests with browser automation:
 - Executes test plan across discovered pages
 - Captures screenshots as evidence
 - Records all interactions and outcomes
+- Emits periodic heartbeat logs while scenarios are running
 
 #### 7. Cross-Validation
 
@@ -165,6 +168,7 @@ Validates test results against requirements:
 - Assigns pass/partial/fail/not_tested status
 - Scores each requirement (0-100)
 - Links evidence screenshots to requirements
+- Emits heartbeat logs during long-running cross-validation calls
 
 #### 8. Reporting
 
@@ -183,6 +187,7 @@ Results are written to `.ui-qa-runs/<run-id>/`:
 ```
 .ui-qa-runs/
 └── cli-1234567890/
+    ├── events.jsonl
     ├── run.json
     ├── report.md
     ├── llm-fix.txt
@@ -193,7 +198,14 @@ Results are written to `.ui-qa-runs/<run-id>/`:
 
 ### Validation Mode Output
 
-Results are written to the specified output directory (default: `./reports`):
+Validation mode writes run artifacts to `.ui-qa-runs/validation-<run-id>/` and reports to the specified output directory (default: `./reports`):
+
+```
+.ui-qa-runs/
+└── validation-1234567890/
+    ├── events.jsonl
+    └── run.json
+```
 
 ```
 reports/
@@ -201,12 +213,17 @@ reports/
 └── traceability-report-2026-02-04T12-34-56.md
 ```
 
+`events.jsonl` is enabled by default and contains the full phase-by-phase event stream.
+
+Set `JSON_LOGS=false` to disable writing JSON events.
+
 ### File Reference
 
 **Test Mode:**
 
 | File | Contents |
 |------|----------|
+| `events.jsonl` | Streaming JSON events for each phase and action |
 | `run.json` | Run metadata plus embedded report and evidence |
 | `report.md` | Human-readable summary |
 | `llm-fix.txt` | Instructions for automated fixes |
@@ -216,6 +233,8 @@ reports/
 
 | File | Contents |
 |------|----------|
+| `.ui-qa-runs/validation-<run-id>/events.jsonl` | Streaming validation events (parsing, extraction, execution, cross-validation, reporting) |
+| `.ui-qa-runs/validation-<run-id>/run.json` | Validation run metadata and embedded results |
 | `traceability-report-<timestamp>.json` | Complete validation report with requirements, rubric, results, and scores |
 | `traceability-report-<timestamp>.md` | Human-readable summary with requirement traceability |
 

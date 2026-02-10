@@ -47,8 +47,21 @@ The agent includes several stability mechanisms:
 - `BROWSER_TIMEOUT`: General browser timeout (default: 60000ms)
 - `NAVIGATION_TIMEOUT`: Page load timeout (default: 45000ms)
 - `ACTION_TIMEOUT`: Click/fill action timeout (default: 15000ms)
+- `SCENARIO_TIMEOUT_MS`: Per-scenario timeout in validation mode (default: `max(BROWSER_TIMEOUT * 4, 180000)`)
+- `LLM_TIMEOUT_MS`: Default timeout for LLM calls (default: 60000ms)
+- `CROSS_VALIDATION_TIMEOUT_MS`: Cross-validation request timeout override (falls back to `LLM_TIMEOUT_MS`, then 90000ms)
 - `MAX_RETRIES`: Retry attempts for transient failures (default: 3, test mode only)
 - `RETRY_DELAY_MS`: Initial retry delay, doubles each attempt (default: 1000ms, test mode only)
+
+## Custom Dropdown Select Fallback
+
+The `select` action supports both native `<select>` elements and many custom dropdown patterns:
+
+- Native `<select>`: Uses `selectOption` with value/label matching
+- Custom components: Falls back to combobox/listbox selectors (`[role='combobox']`, `[aria-haspopup='listbox']`, listbox options)
+- `:nth-of-type(...)` selectors: Preserves positional targeting when falling back
+
+This improves reliability on modern UI libraries that render non-native selects.
 
 ## Debugging and Headed Mode
 
@@ -64,6 +77,14 @@ The agent includes several stability mechanisms:
 - Verifying test behavior
 
 Note: Validation mode currently runs headless only.
+
+## Structured Event Logs and Heartbeats
+
+By default, UI QA writes streaming JSON events to `.ui-qa-runs/<run-id>/events.jsonl`.
+
+- Disable with `JSON_LOGS=false`
+- Force-enable from CLI with `--json-logs`
+- Includes periodic heartbeat messages during long phases (for example, execution and cross-validation progress updates every ~15 seconds)
 
 ## Screenshot Capture
 

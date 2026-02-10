@@ -63,6 +63,9 @@ Validation mode uses the same environment variables, but defaults differ:
 | `BROWSER_TIMEOUT` | `60000` | General browser timeout (ms) |
 | `NAVIGATION_TIMEOUT` | `45000` | Page load timeout (ms) |
 | `ACTION_TIMEOUT` | `15000` | Click/fill action timeout (ms) |
+| `SCENARIO_TIMEOUT_MS` | `max(BROWSER_TIMEOUT * 4, 180000)` | Per-scenario timeout in validation mode |
+| `LLM_TIMEOUT_MS` | `60000` | Default timeout for LLM calls |
+| `CROSS_VALIDATION_TIMEOUT_MS` | `LLM_TIMEOUT_MS` or `90000` fallback | Timeout for validation cross-check requests |
 
 ### Retry Behavior
 
@@ -76,6 +79,12 @@ Validation mode uses the same environment variables, but defaults differ:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEBUG` | `false` | Enable verbose debug output |
+
+### Logging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JSON_LOGS` | `true` | Write streaming JSON logs to `.ui-qa-runs/<run-id>/events.jsonl` (`false` to disable) |
 
 ## Example Configuration
 
@@ -98,10 +107,16 @@ HEADLESS=true
 BROWSER_TIMEOUT=60000
 NAVIGATION_TIMEOUT=45000
 ACTION_TIMEOUT=15000
+SCENARIO_TIMEOUT_MS=180000
+LLM_TIMEOUT_MS=60000
+CROSS_VALIDATION_TIMEOUT_MS=90000
 
 # Retries
 MAX_RETRIES=3
 RETRY_DELAY_MS=1000
+
+# Logging
+JSON_LOGS=true
 
 # Debug
 DEBUG=false
