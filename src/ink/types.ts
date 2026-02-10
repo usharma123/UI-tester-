@@ -52,6 +52,8 @@ export interface AppState {
     timestamp: number;
   }>;
   logScrollOffset: number;
+  autoFollowLogs: boolean;
+  logViewLines: number;
 
   // Results
   report: Report | null;
@@ -75,6 +77,8 @@ export const initialState: AppState = {
   totalScenarios: 0,
   logs: [],
   logScrollOffset: 0,
+  autoFollowLogs: true,
+  logViewLines: 6,
   report: null,
   evidence: null,
   error: null,
@@ -85,8 +89,11 @@ export type AppAction =
   | { type: "SET_MODE"; mode: AppMode }
   | { type: "SET_URL"; url: string }
   | { type: "SET_GOALS"; goals: string }
+  | { type: "SET_LOG_VIEW_LINES"; lines: number }
   | { type: "START_RUN" }
   | { type: "PROCESS_EVENT"; event: SSEEvent }
+  | { type: "PROCESS_EVENTS_BATCH"; events: SSEEvent[] }
   | { type: "SET_ERROR"; error: string }
   | { type: "RESET" }
-  | { type: "SCROLL_LOGS"; delta: number };
+  | { type: "SCROLL_LOGS"; delta: number }
+  | { type: "JUMP_LOGS"; position: "start" | "end" };

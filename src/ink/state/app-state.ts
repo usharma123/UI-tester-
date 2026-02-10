@@ -31,6 +31,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_GOALS":
       return { ...state, goals: action.goals };
 
+    case "SET_LOG_VIEW_LINES":
+      return { ...state, logViewLines: Math.max(3, action.lines) };
+
     case "START_RUN":
       return {
         ...state,
@@ -38,6 +41,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         tasks: [],
         logs: [],
         logScrollOffset: 0,
+        autoFollowLogs: true,
         error: null,
         currentPhase: null,
         completedPhases: [],
@@ -57,10 +61,26 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "PROCESS_EVENT":
       return processEvent(state, action.event);
 
+    case "PROCESS_EVENTS_BATCH": {
+      let s = state;
+      for (const event of action.events) {
+        s = processEvent(s, event);
+      }
+      return s;
+    }
+
     case "SCROLL_LOGS": {
-      const maxOffset = Math.max(0, state.logs.length - LOG_LINES);
+      const maxOffset = Math.max(0, state.logs.length - state.logViewLines);
       const newOffset = Math.max(0, Math.min(maxOffset, state.logScrollOffset + action.delta));
-      return { ...state, logScrollOffset: newOffset };
+      return { ...state, logScrollOffset: newOffset, autoFollowLogs: false };
+    }
+
+    case "JUMP_LOGS": {
+      const maxOffset = Math.max(0, state.logs.length - state.logViewLines);
+      if (action.position === "start") {
+        return { ...state, logScrollOffset: 0, autoFollowLogs: false };
+      }
+      return { ...state, logScrollOffset: maxOffset, autoFollowLogs: true };
     }
 
     default:
@@ -156,8 +176,11 @@ export function processEvent(state: AppState, event: SSEEvent): AppState {
           timestamp: event.timestamp,
         },
       ].slice(-50);
-      const maxOffset = Math.max(0, newLogs.length - LOG_LINES);
-      return { ...state, logs: newLogs, logScrollOffset: maxOffset };
+      const maxOffset = Math.max(0, newLogs.length - state.logViewLines);
+      const nextOffset = state.autoFollowLogs
+        ? maxOffset
+        : Math.max(0, Math.min(maxOffset, state.logScrollOffset));
+      return { ...state, logs: newLogs, logScrollOffset: nextOffset };
     }
 
     case "complete": {

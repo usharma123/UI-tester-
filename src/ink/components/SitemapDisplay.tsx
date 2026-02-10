@@ -1,11 +1,14 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { SitemapUrl } from "../../qa/progress-types.js";
+import { SectionTitle } from "./primitives/SectionTitle.js";
+import { truncateText } from "../utils/truncate.js";
 
 interface SitemapDisplayProps {
   sitemap: SitemapUrl[];
   source: string;
   maxHeight?: number;
+  maxWidth?: number;
 }
 
 // Get path from URL
@@ -114,24 +117,30 @@ function flattenTree(
   return lines;
 }
 
-export function SitemapDisplay({ sitemap, source, maxHeight = 10 }: SitemapDisplayProps): React.ReactElement {
+export function SitemapDisplay({
+  sitemap,
+  source,
+  maxHeight = 10,
+  maxWidth = 100,
+}: SitemapDisplayProps): React.ReactElement {
   if (sitemap.length === 0) {
     return <></>;
   }
 
   const tree = buildPathTree(sitemap);
   const lines = flattenTree(tree);
-  
-  // Limit displayed lines if needed
-  const displayLines = lines.slice(0, maxHeight);
-  const hasMore = lines.length > maxHeight;
+  const highPriorityCount = sitemap.filter((url) => typeof url.priority === "number" && url.priority >= 0.8).length;
+
+  // Reserve lines for chrome: title(1) + border top/bottom(2) = 3
+  const maxItems = Math.max(1, maxHeight - 3);
+  const displayLines = lines.slice(0, maxItems);
+  const hasMore = lines.length > maxItems;
+  const lineWidth = Math.max(18, maxWidth - 16);
+  const hpSuffix = highPriorityCount > 0 ? `, ${highPriorityCount} high-priority` : "";
 
   return (
-    <Box flexDirection="column" marginTop={1} height={maxHeight + 4} overflowY="hidden">
-      <Box>
-        <Text bold>Discovered Pages</Text>
-        <Text dimColor> ({sitemap.length} pages via {source})</Text>
-      </Box>
+    <Box flexDirection="column">
+      <SectionTitle title="Discovered Pages" summary={`(${sitemap.length} via ${source}${hpSuffix})`} />
 
       <Box
         flexDirection="column"
@@ -139,18 +148,15 @@ export function SitemapDisplay({ sitemap, source, maxHeight = 10 }: SitemapDispl
         borderColor="gray"
         paddingX={1}
         paddingY={0}
-        height={maxHeight + 2}
-        overflowY="hidden"
       >
         {displayLines.map((line, index) => (
           <Box key={line.path + index}>
-            <Text dimColor>{line.text.slice(0, line.text.lastIndexOf(" ") + 1)}</Text>
-            <Text color="cyan">{line.text.slice(line.text.lastIndexOf(" ") + 1) || line.text}</Text>
+            <Text color="cyan">{truncateText(line.text, lineWidth)}</Text>
             {line.priority !== undefined && <Text dimColor> ({line.priority})</Text>}
           </Box>
         ))}
         {hasMore && (
-          <Text dimColor>  ... {lines.length - maxHeight} more</Text>
+          <Text dimColor>  ... {lines.length - maxItems} more</Text>
         )}
       </Box>
     </Box>
