@@ -19,6 +19,9 @@ export function validateAppReducer(
     case "SET_URL":
       return { ...state, url: action.url };
 
+    case "SET_LOG_VIEW_LINES":
+      return { ...state, logViewLines: Math.max(3, action.lines) };
+
     case "START_RUN":
       return {
         ...state,
@@ -32,6 +35,7 @@ export function validateAppReducer(
         validatedCount: 0,
         logs: [],
         logScrollOffset: 0,
+        autoFollowLogs: true,
         report: null,
         reportPath: null,
         markdownPath: null,
@@ -93,17 +97,28 @@ export function validateAppReducer(
           timestamp: Date.now(),
         },
       ].slice(-50);
-      const maxOffset = Math.max(0, newLogs.length - LOG_LINES);
-      return { ...state, logs: newLogs, logScrollOffset: maxOffset };
+      const maxOffset = Math.max(0, newLogs.length - state.logViewLines);
+      const nextOffset = state.autoFollowLogs
+        ? maxOffset
+        : Math.max(0, Math.min(maxOffset, state.logScrollOffset));
+      return { ...state, logs: newLogs, logScrollOffset: nextOffset };
     }
 
     case "SET_ERROR":
       return { ...state, mode: "error", error: action.error };
 
     case "SCROLL_LOGS": {
-      const maxOffset = Math.max(0, state.logs.length - LOG_LINES);
+      const maxOffset = Math.max(0, state.logs.length - state.logViewLines);
       const newOffset = Math.max(0, Math.min(maxOffset, state.logScrollOffset + action.delta));
-      return { ...state, logScrollOffset: newOffset };
+      return { ...state, logScrollOffset: newOffset, autoFollowLogs: false };
+    }
+
+    case "JUMP_LOGS": {
+      const maxOffset = Math.max(0, state.logs.length - state.logViewLines);
+      if (action.position === "start") {
+        return { ...state, logScrollOffset: 0, autoFollowLogs: false };
+      }
+      return { ...state, logScrollOffset: maxOffset, autoFollowLogs: true };
     }
 
     case "RESET":

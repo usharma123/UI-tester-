@@ -64,6 +64,8 @@ export interface ValidateAppState {
     timestamp: number;
   }>;
   logScrollOffset: number;
+  autoFollowLogs: boolean;
+  logViewLines: number;
 
   // Final report
   report: TraceabilityReport | null;
@@ -94,6 +96,8 @@ export const initialValidateState: ValidateAppState = {
   validatedCount: 0,
   logs: [],
   logScrollOffset: 0,
+  autoFollowLogs: true,
+  logViewLines: 6,
   report: null,
   reportPath: null,
   markdownPath: null,
@@ -105,6 +109,7 @@ export type ValidateAppAction =
   | { type: "SET_MODE"; mode: ValidateAppMode }
   | { type: "SET_SPEC_FILE"; specFile: string }
   | { type: "SET_URL"; url: string }
+  | { type: "SET_LOG_VIEW_LINES"; lines: number }
   | { type: "START_RUN" }
   | { type: "PROCESS_VALIDATION_PHASE_START"; phase: ValidationPhase }
   | { type: "PROCESS_VALIDATION_PHASE_COMPLETE"; phase: ValidationPhase }
@@ -117,4 +122,5 @@ export type ValidateAppAction =
   | { type: "ADD_LOG"; message: string; level: "info" | "warn" | "error" }
   | { type: "SET_ERROR"; error: string }
   | { type: "SCROLL_LOGS"; delta: number }
+  | { type: "JUMP_LOGS"; position: "start" | "end" }
   | { type: "RESET" };
