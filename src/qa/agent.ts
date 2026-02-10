@@ -8,6 +8,44 @@ import type { TestScenario, AgentAction, AgentStep, TestResult, TestStatus } fro
 import type { LLMClient, LLMMessage } from "./llm.js";
 import { screenshotToContent, extractJson } from "./llm.js";
 import { AGENT_SYSTEM_PROMPT, buildAgentPrompt } from "./prompts.js";
+import { sanitizeSelector } from "./selector-sanitizer.js";
+
+// =============================================================================
+// Failure classification: hard (fatal) vs soft (recoverable)
+// =============================================================================
+
+export type FailureClass = "hard" | "soft";
+
+const HARD_FAILURE_PATTERNS = [
+  "target closed",
+  "navigation failed",
+  "crash",
+  "frame was detached",
+  "execution context was destroyed",
+];
+
+/**
+ * Classify a failure as hard (unrecoverable) or soft (potentially transient).
+ * Hard failures count fully toward the consecutive failure limit.
+ * Soft failures count half, allowing more recovery attempts.
+ */
+export function classifyFailure(error: string | undefined, actionType: string): FailureClass {
+  if (!error) return "soft";
+  const lower = error.toLowerCase();
+
+  // Selector misses are often recoverable on click/select/hover with alternate selectors.
+  if (
+    (lower.includes("element not found") || lower.includes("no element matches")) &&
+    (actionType === "click" || actionType === "select" || actionType === "hover")
+  ) {
+    return "soft";
+  }
+
+  for (const pattern of HARD_FAILURE_PATTERNS) {
+    if (lower.includes(pattern)) return "hard";
+  }
+  return "soft";
+}
 
 export interface RunScenarioOptions {
   browser: AgentBrowser;
@@ -100,6 +138,32 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
       onStep?.(step);
       screenshots.push(observationScreenshotPath);
       break;
+    }
+
+    // Sanitize selector to remove bad patterns (empty attrs, etc.)
+    if (action.selector) {
+      try {
+        action.selector = sanitizeSelector(action.selector);
+      } catch {
+        // Sanitizer produced empty result — record as soft failure and continue
+        const step: AgentStep = {
+          index: i,
+          action,
+          success: false,
+          error: `Selector sanitization failed for: "${action.selector}"`,
+          screenshotPath: observationScreenshotPath,
+          timestamp: Date.now(),
+        };
+        steps.push(step);
+        onStep?.(step);
+        screenshots.push(observationScreenshotPath);
+        history.push({
+          action: formatAction(action),
+          result: `failed: selector sanitization produced empty result. REPAIR HINT: Use a different, more specific selector.`,
+        });
+        consecutiveFailures += 0.5;
+        continue;
+      }
     }
 
     // 3. ACT
@@ -241,7 +305,17 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
     });
 
     if (!success) {
-      consecutiveFailures += 1;
+      const failClass = classifyFailure(error, action.type);
+      consecutiveFailures += failClass === "hard" ? 1 : 0.5;
+
+      // Add repair hint to history so LLM adjusts on next iteration
+      if (failClass === "soft") {
+        const lastEntry = history[history.length - 1];
+        if (lastEntry) {
+          lastEntry.result += ` — REPAIR HINT: Try a different selector or approach.`;
+        }
+      }
+
       if (consecutiveFailures >= maxConsecutiveFailures) {
         return {
           scenario,
