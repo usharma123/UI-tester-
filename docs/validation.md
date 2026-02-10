@@ -21,6 +21,18 @@ Validation mode takes a specification document (Markdown) and a website URL, the
 npx @usharma124/ui-qa validate --spec requirements.md --url https://app.example.com
 ```
 
+## Validation TUI Behavior
+
+- Adaptive layout by terminal height:
+  - `>= 40` rows: rich mode (full requirement/rubric/page sections + larger logs)
+  - `30-39` rows: standard mode
+  - `24-29` rows: compact mode (trimmed summaries)
+  - `< 24` rows: minimal mode (phase + progress + logs)
+- Log navigation shortcuts while running:
+  - `↑/↓` or `k/j` for line scroll
+  - `PgUp/PgDn` for page scroll
+  - `g/G` for top/bottom (`G` enables live follow)
+
 ## Specification File Format
 
 Validation mode supports Markdown specification files. The LLM automatically extracts requirements from structured content.

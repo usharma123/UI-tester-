@@ -93,3 +93,15 @@ Validates websites against specification documents through eight phases:
 ```
 
 Results include markdown reports, run metadata, streaming JSON logs, and screenshots saved to `.ui-qa-runs/`.
+
+## TUI UX Notes
+
+- Adaptive density by terminal height:
+  - `>= 40` rows: rich mode
+  - `30-39` rows: standard mode
+  - `24-29` rows: compact mode
+  - `< 24` rows: minimal mode (phase + progress + logs)
+- Log navigation shortcuts:
+  - `↑/↓` or `k/j` for line scroll
+  - `PgUp/PgDn` for page scroll
+  - `g/G` for top/bottom (`G` re-enables live follow)

@@ -113,9 +113,20 @@ The validation mode validates a website against a specification document:
 ### Keyboard Shortcuts
 
 - `Enter` - Submit URL / Confirm selection / Continue
-- `↑/↓` - Select testing mode / Scroll through logs
+- `↑/↓` or `k/j` - Select testing mode / Scroll through logs
+- `PgUp/PgDn` - Scroll logs by page
+- `g/G` - Jump logs to top/bottom (`G` re-enables live follow)
 - `r` - Retry after error
 - `q` - Quit (when not running)
+
+### Adaptive Terminal Layout
+
+The TUI now adapts section density to terminal size while keeping stable section names:
+
+- `>= 40 rows`: rich mode (full lists, larger logs)
+- `30-39 rows`: standard mode
+- `24-29 rows`: compact mode (trimmed summaries)
+- `< 24 rows`: minimal mode (phase, progress, logs)
 
 ## Configuration
 
