@@ -54,7 +54,15 @@ Validation mode uses the same environment variables, but defaults differ:
 | Variable | Default (Validation Mode) | Description |
 |----------|---------------------------|-------------|
 | `MAX_PAGES` | `50` | Maximum pages to test |
+| `MAX_SCENARIOS_PER_PAGE` | `8` | Maximum scenarios generated per page |
+| `MAX_STEPS_PER_SCENARIO` | `14` | Maximum agent steps per scenario |
 | `PARALLEL_BROWSERS` | `5` | Concurrent browser instances |
+| `VALIDATION_GAP_ROUNDS` | `4` | Iterative uncovered-requirement planning rounds |
+| `VALIDATION_GAP_PAGES_PER_ROUND` | `3` | Max pages targeted per gap round |
+| `VALIDATION_MAX_TOTAL_SCENARIOS` | `60` | Hard cap on total generated scenarios |
+| `VALIDATION_ENABLE_PROBES` | `true` | Enable deterministic post-execution probes |
+| `VALIDATION_PERF_LOAD_BUDGET_MS` | `2000` | Performance probe load-time budget |
+| `VALIDATION_PERF_UI_BUDGET_MS` | `100` | Performance probe UI-latency budget |
 
 ### Timeouts
 

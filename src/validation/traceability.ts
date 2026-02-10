@@ -10,6 +10,7 @@ import type {
   RequirementResult,
   TraceabilityReport,
 } from "./types.js";
+import type { ValidationProbeResult } from "./probes/types.js";
 
 export interface TraceabilityInput {
   specFile: string;
@@ -17,6 +18,7 @@ export interface TraceabilityInput {
   requirements: Requirement[];
   rubric: Rubric;
   results: RequirementResult[];
+  probeResults?: ValidationProbeResult[];
 }
 
 /**
@@ -105,6 +107,14 @@ export function generateTraceabilityReport(
   const overallScore = calculateOverallScore(input.results, input.rubric);
   const coverageScore = calculateCoverageScore(input.results);
   const summary = generateSummary(input.results, overallScore, coverageScore);
+  const probeResults = input.probeResults ?? [];
+  const probeSummary = probeResults.length
+    ? {
+        total: probeResults.length,
+        passed: probeResults.filter((p) => p.status === "pass").length,
+        failed: probeResults.filter((p) => p.status === "fail" || p.status === "error").length,
+      }
+    : undefined;
 
   return {
     specFile: input.specFile,
@@ -112,6 +122,8 @@ export function generateTraceabilityReport(
     requirements: input.requirements,
     rubric: input.rubric,
     results: input.results,
+    probeResults,
+    probeSummary,
     overallScore,
     coverageScore,
     summary,
@@ -193,7 +205,69 @@ export function generateMarkdownSummary(report: TraceabilityReport): string {
     }
   }
 
+  if (report.probeResults && report.probeResults.length > 0) {
+    lines.push(`## Probe Coverage`);
+    lines.push("");
+    if (report.probeSummary) {
+      lines.push(`- **Probes:** ${report.probeSummary.total}`);
+      lines.push(`- **Passed:** ${report.probeSummary.passed}`);
+      lines.push(`- **Failed/Error:** ${report.probeSummary.failed}`);
+      lines.push("");
+    }
+
+    for (const probe of report.probeResults) {
+      lines.push(`### ${probe.kind} (${probe.status})`);
+      lines.push("");
+      lines.push(`${probe.summary}`);
+      lines.push("");
+      if (probe.coveredRequirementIds.length > 0) {
+        lines.push(`- Requirements: ${probe.coveredRequirementIds.join(", ")}`);
+      }
+      if (probe.metrics && Object.keys(probe.metrics).length > 0) {
+        lines.push(
+          `- Metrics: ${Object.entries(probe.metrics)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(", ")}`
+        );
+      }
+      lines.push("");
+    }
+  }
+
+  const notTestedResults = report.results.filter((r) => r.status === "not_tested");
+  if (notTestedResults.length > 0) {
+    const grouped = new Map<string, RequirementResult[]>();
+    for (const result of notTestedResults) {
+      const reasonKey = classifyNotTestedReason(result.reasoning);
+      const group = grouped.get(reasonKey) ?? [];
+      group.push(result);
+      grouped.set(reasonKey, group);
+    }
+
+    lines.push(`## Remaining Not Tested (Grouped)`);
+    lines.push("");
+    for (const [reason, group] of grouped.entries()) {
+      lines.push(`### ${reason}`);
+      lines.push("");
+      for (const result of group) {
+        lines.push(`- ${result.requirementId}: ${result.reasoning}`);
+      }
+      lines.push("");
+    }
+  }
+
   return lines.join("\n");
+}
+
+function classifyNotTestedReason(reasoning: string): string {
+  const lower = reasoning.toLowerCase();
+  if (lower.includes("not measured") || lower.includes("timing")) return "Missing Performance Measurements";
+  if (lower.includes("responsive")) return "Missing Responsive Evidence";
+  if (lower.includes("contrast") || lower.includes("wcag")) return "Missing Accessibility Tooling/Evidence";
+  if (lower.includes("keyboard")) return "Missing Keyboard Interaction Evidence";
+  if (lower.includes("loading")) return "Loading State Not Observed";
+  if (lower.includes("error")) return "Error Path Not Exercised";
+  return "Other Evidence Gaps";
 }
 
 /**

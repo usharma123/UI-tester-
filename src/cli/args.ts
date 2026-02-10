@@ -91,7 +91,7 @@ Options:
   --spec, -s <file>     Path to requirements/specification file (required)
   --url, -u <url>       URL to validate against (required)
   --output, -o <dir>    Output directory for reports (default: ./reports)
-  --json-logs           Write streaming logs as JSON lines to .ui-qa-runs/<runId>/events.jsonl
+  --json-logs           Force JSON event logs (enabled by default; set JSON_LOGS=false to disable)
   --help, -h            Show this help message
 
 Examples:
@@ -116,7 +116,7 @@ Commands:
 
 Options:
   --goals, -g <string>  Test goals (default: "homepage UX + primary CTA + form validation + keyboard")
-  --json-logs           Write streaming logs as JSON lines to .ui-qa-runs/<runId>/events.jsonl
+  --json-logs           Force JSON event logs (enabled by default; set JSON_LOGS=false to disable)
   --help, -h            Show this help message
 
 Examples:

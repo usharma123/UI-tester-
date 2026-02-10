@@ -41,11 +41,11 @@ export function useValidationRunner(
       setError(null);
       abortRef.current = false;
       const runId = `validation-${Date.now()}`;
-      const jsonLogsEnabled = options.jsonLogs || process.env.JSON_LOGS === "true";
+      const jsonLogsEnabled = options.jsonLogs || process.env.JSON_LOGS !== "false";
       const eventsFilePath = jsonLogsEnabled
         ? join(localStorage.getLocalStorageDir(), runId, "events.jsonl")
         : undefined;
-      const logEvent = jsonLogsEnabled && eventsFilePath
+      const logEvent = jsonLogsEnabled
         ? createJsonEventLogger({ runId, filePath: eventsFilePath })
         : null;
 

@@ -95,6 +95,17 @@ export const RequirementResultSchema = z.object({
   reasoning: z.string(),
 });
 
+export const ValidationProbeResultSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  status: z.enum(["pass", "partial", "fail", "error"]),
+  summary: z.string(),
+  evidence: z.array(z.string()),
+  coveredRequirementIds: z.array(z.string()),
+  metrics: z.record(z.string(), z.number()).optional(),
+  findings: z.array(z.string()).optional(),
+});
+
 /**
  * Cross-validation results
  */
@@ -111,6 +122,14 @@ export const TraceabilityReportSchema = z.object({
   requirements: z.array(RequirementSchema),
   rubric: RubricSchema,
   results: z.array(RequirementResultSchema),
+  probeResults: z.array(ValidationProbeResultSchema).optional(),
+  probeSummary: z
+    .object({
+      total: z.number().min(0),
+      passed: z.number().min(0),
+      failed: z.number().min(0),
+    })
+    .optional(),
   overallScore: z.number().min(0).max(100),
   coverageScore: z.number().min(0).max(100),
   summary: z.string(),

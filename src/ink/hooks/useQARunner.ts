@@ -38,11 +38,11 @@ export function useQARunner(onEvent: EventHandler, options: UseQARunnerOptions =
       setError(null);
       abortRef.current = false;
       const convexRunId = `cli-${Date.now()}`;
-      const jsonLogsEnabled = options.jsonLogs || process.env.JSON_LOGS === "true";
+      const jsonLogsEnabled = options.jsonLogs || process.env.JSON_LOGS !== "false";
       const eventsFilePath = jsonLogsEnabled
         ? join(localStorage.getLocalStorageDir(), convexRunId, "events.jsonl")
         : undefined;
-      const logEvent = jsonLogsEnabled && eventsFilePath
+      const logEvent = jsonLogsEnabled
         ? createJsonEventLogger({ runId: convexRunId, filePath: eventsFilePath })
         : null;
 

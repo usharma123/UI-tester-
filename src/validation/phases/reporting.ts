@@ -2,6 +2,7 @@ import type { ProgressCallback } from "../../qa/progress-types.js";
 import type { Requirement, Rubric, RequirementResult, TraceabilityReport } from "../types.js";
 import { emit, emitValidationPhaseStart, emitValidationPhaseComplete } from "../../core/events/emit.js";
 import { generateTraceabilityReport, saveTraceabilityReport, saveMarkdownSummary } from "../traceability.js";
+import type { ValidationProbeResult } from "../probes/types.js";
 
 export interface ReportingPhaseOptions {
   specFile: string;
@@ -9,6 +10,7 @@ export interface ReportingPhaseOptions {
   requirements: Requirement[];
   rubric: Rubric;
   results: RequirementResult[];
+  probeResults?: ValidationProbeResult[];
   outputDir: string;
   onProgress: ProgressCallback;
 }
@@ -20,7 +22,7 @@ export interface ReportingPhaseResult {
 }
 
 export async function runReportingPhase(options: ReportingPhaseOptions): Promise<ReportingPhaseResult> {
-  const { specFile, url, requirements, rubric, results, outputDir, onProgress } = options;
+  const { specFile, url, requirements, rubric, results, probeResults, outputDir, onProgress } = options;
 
   emitValidationPhaseStart(onProgress, "reporting");
   emit(onProgress, {
@@ -35,6 +37,7 @@ export async function runReportingPhase(options: ReportingPhaseOptions): Promise
     requirements,
     rubric,
     results,
+    probeResults,
   });
 
   const reportPath = await saveTraceabilityReport(report, outputDir);

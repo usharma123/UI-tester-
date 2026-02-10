@@ -105,7 +105,7 @@ The validation mode validates a website against a specification document:
    - **Rubric**: Generates evaluation rubric
    - **Discovery**: Discovers site structure
    - **Planning**: Creates requirement-linked test plan
-   - **Execution**: Runs tests with browser automation
+   - **Execution**: Runs tests with browser automation + deterministic probes
    - **Cross-Validation**: Validates results against requirements
    - **Reporting**: Generates traceability report
 3. View traceability report with requirement-to-evidence mapping
@@ -140,6 +140,19 @@ The validation mode validates a website against a specification document:
 | `NAVIGATION_TIMEOUT` | `45000` | Page load timeout (ms) |
 | `ACTION_TIMEOUT` | `15000` | Click/fill action timeout (ms) |
 | `DEBUG` | `false` | Enable verbose output |
+
+#### Validation Mode Controls
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_SCENARIOS_PER_PAGE` | `8` | Max scenarios generated per page in validation mode |
+| `MAX_STEPS_PER_SCENARIO` | `14` | Max agent steps per validation scenario |
+| `VALIDATION_GAP_ROUNDS` | `4` | Iterative gap-closure rounds for uncovered requirements |
+| `VALIDATION_GAP_PAGES_PER_ROUND` | `3` | Max pages targeted per gap round |
+| `VALIDATION_MAX_TOTAL_SCENARIOS` | `60` | Hard cap on total generated scenarios |
+| `VALIDATION_ENABLE_PROBES` | `true` | Enable keyboard/responsive/performance/accessibility probes |
+| `VALIDATION_PERF_LOAD_BUDGET_MS` | `2000` | Load-time budget for performance probe |
+| `VALIDATION_PERF_UI_BUDGET_MS` | `100` | UI-latency budget for performance probe |
 
 #### Coverage-Guided Exploration (Advanced)
 

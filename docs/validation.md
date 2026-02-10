@@ -130,6 +130,7 @@ Runs tests with browser automation:
 - Records all interactions and outcomes
 - Handles errors gracefully
 - Emits heartbeat progress logs during long scenario batches
+- Runs deterministic probes after scenarios (keyboard, responsive, performance, accessibility)
 
 **Output**: Test execution summary with screenshots
 
@@ -153,6 +154,7 @@ Generates traceability report:
 - Calculates coverage score (percentage tested)
 - Produces markdown summary
 - Includes requirement-to-evidence mapping
+- Includes probe coverage summary and grouped not-tested reasons
 
 **Output**: Traceability report (JSON and Markdown)
 
@@ -291,7 +293,15 @@ Additional validation-specific settings:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MAX_PAGES` | `50` | Maximum pages to discover and test |
+| `MAX_SCENARIOS_PER_PAGE` | `8` | Maximum scenarios generated per page |
+| `MAX_STEPS_PER_SCENARIO` | `14` | Maximum steps executed per scenario |
 | `PARALLEL_BROWSERS` | `5` | Concurrent browser instances |
+| `VALIDATION_GAP_ROUNDS` | `4` | Gap-closure planning rounds for uncovered requirements |
+| `VALIDATION_GAP_PAGES_PER_ROUND` | `3` | Max pages targeted per gap round |
+| `VALIDATION_MAX_TOTAL_SCENARIOS` | `60` | Hard cap on total generated scenarios |
+| `VALIDATION_ENABLE_PROBES` | `true` | Enable deterministic probes |
+| `VALIDATION_PERF_LOAD_BUDGET_MS` | `2000` | Load performance budget (ms) |
+| `VALIDATION_PERF_UI_BUDGET_MS` | `100` | UI response budget (ms) |
 | `SCENARIO_TIMEOUT_MS` | `max(BROWSER_TIMEOUT * 4, 180000)` | Max runtime per validation scenario |
 | `CROSS_VALIDATION_TIMEOUT_MS` | `LLM_TIMEOUT_MS` or `90000` fallback | Timeout for cross-validation LLM request |
 | `JSON_LOGS` | `true` | Writes `.ui-qa-runs/validation-<run-id>/events.jsonl` (`false` to disable) |
@@ -315,6 +325,8 @@ Additional validation-specific settings:
 - Element selectors may be incorrect
 - Pages may require authentication
 - Elements may be dynamically loaded
+- Probe execution may be disabled (`VALIDATION_ENABLE_PROBES=false`)
+- No scenario/probe evidence was collected for that requirement
 
 ## Integration with CI/CD
 

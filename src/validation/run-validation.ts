@@ -58,6 +58,7 @@ export async function runValidation(
     errors: [],
     screenshots: [],
     scenarioRuns: [],
+    probeResults: [],
   };
 
   let browserToClose: { close: () => Promise<void> } | null = null;
@@ -124,6 +125,7 @@ export async function runValidation(
       requirements,
       rubric,
       results,
+      probeResults: testExecution.probeResults,
       outputDir: config.outputDir,
       onProgress,
     });

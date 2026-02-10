@@ -95,12 +95,29 @@ export interface TraceabilityReport {
   rubric: Rubric;
   /** Test results for each requirement */
   results: RequirementResult[];
+  /** Optional deterministic probe results */
+  probeResults?: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    summary: string;
+    evidence: string[];
+    coveredRequirementIds: string[];
+    metrics?: Record<string, number>;
+    findings?: string[];
+  }>;
   /** Overall score (0-100) */
   overallScore: number;
   /** Percentage of requirements tested */
   coverageScore: number;
   /** Summary of the validation */
   summary: string;
+  /** Optional probe execution summary */
+  probeSummary?: {
+    total: number;
+    passed: number;
+    failed: number;
+  };
   /** Timestamp of the validation */
   timestamp: number;
 }
@@ -134,8 +151,10 @@ export interface ValidationConfig {
   openRouterModel: string;
   /** Maximum pages to test */
   maxPages: number;
-  /** Steps per page */
-  stepsPerPage: number;
+  /** Maximum scenarios generated per page during planning */
+  maxScenariosPerPage: number;
+  /** Maximum agent steps per scenario */
+  maxStepsPerScenario: number;
   /** Number of parallel browsers */
   parallelBrowsers: number;
   /** Browser timeout in ms */
@@ -144,6 +163,18 @@ export interface ValidationConfig {
   navigationTimeout: number;
   /** Action timeout in ms */
   actionTimeout: number;
+  /** Iterative uncovered-requirement planning rounds */
+  gapRounds: number;
+  /** Max pages to focus per uncovered-requirement round */
+  gapPagesPerRound: number;
+  /** Hard cap on total scenarios in a validation run */
+  maxTotalScenarios: number;
+  /** Whether deterministic probes should run after scenario execution */
+  enableProbes: boolean;
+  /** Load-time budget used by performance probe (ms) */
+  perfLoadBudgetMs: number;
+  /** UI response budget used by performance probe (ms) */
+  perfUiBudgetMs: number;
 }
 
 /**

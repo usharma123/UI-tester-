@@ -4,6 +4,7 @@
 
 import OpenAI from "openai";
 import type { Requirement, RubricCriterion, RequirementResult } from "./types.js";
+import type { ValidationProbeResult } from "./probes/types.js";
 import { safeParseCrossValidationResults } from "./schemas.js";
 import {
   CROSS_VALIDATOR_SYSTEM_PROMPT,
@@ -34,11 +35,40 @@ export interface TestExecutionSummary {
   errors: string[];
   screenshots: string[];
   scenarioRuns: ScenarioRunSummary[];
+  probeResults: ValidationProbeResult[];
 }
 
 export interface CrossValidationResult {
   results: RequirementResult[];
   rawResponse: string;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise;
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
 }
 
 /**
@@ -82,7 +112,8 @@ export async function crossValidate(
   );
 
   let lastError: Error | null = null;
-  const maxRetries = 2;
+  const maxRetries = 3;
+  const timeoutMs = parseInt(process.env.CROSS_VALIDATION_TIMEOUT_MS ?? process.env.LLM_TIMEOUT_MS ?? "90000", 10);
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const messages: OpenAI.ChatCompletionMessageParam[] = [
@@ -97,16 +128,19 @@ export async function crossValidate(
       });
     }
 
-    const response = await client.chat.completions.create({
-      model,
-      messages,
-      temperature: 0.2,
-      max_tokens: 8000,
-    });
-
-    const rawResponse = response.choices[0]?.message?.content ?? "";
-
     try {
+      const response = await withTimeout(
+        client.chat.completions.create({
+          model,
+          messages,
+          temperature: 0.2,
+          max_tokens: 8000,
+        }),
+        timeoutMs,
+        "Cross-validation request"
+      );
+
+      const rawResponse = response.choices[0]?.message?.content ?? "";
       const jsonStr = extractJson(rawResponse);
       const parsed = JSON.parse(jsonStr);
       const validated = safeParseCrossValidationResults(parsed);
@@ -141,9 +175,8 @@ export async function crossValidate(
       lastError = new Error(
         `Schema validation failed: ${validated.error.issues.map((e: { message: string }) => e.message).join(", ")}`
       );
-    } catch (parseError) {
-      lastError =
-        parseError instanceof Error ? parseError : new Error(String(parseError));
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
 

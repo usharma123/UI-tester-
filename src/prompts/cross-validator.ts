@@ -4,12 +4,14 @@
 
 import type { Requirement, RubricCriterion } from "../validation/types.js";
 import type { ScenarioRunSummary } from "../validation/cross-validator.js";
+import type { ValidationProbeResult } from "../validation/probes/types.js";
 
 const MAX_SCENARIOS_IN_PROMPT = 20;
 const MAX_STEPS_PER_SCENARIO_IN_PROMPT = 6;
 const MAX_TOTAL_STEPS_IN_PROMPT = 120;
 const MAX_ERRORS_IN_PROMPT = 30;
 const MAX_SCREENSHOTS_IN_PROMPT = 80;
+const MAX_PROBES_IN_PROMPT = 12;
 
 export const CROSS_VALIDATOR_SYSTEM_PROMPT = `You are an expert QA analyst reviewing test results against requirements. Your task is to determine if each requirement passed, partially passed, or failed based on the test evidence.
 
@@ -76,6 +78,7 @@ export function buildCrossValidatorPrompt(
     errors: string[];
     screenshots: string[];
     scenarioRuns?: ScenarioRunSummary[];
+    probeResults?: ValidationProbeResult[];
   }
 ): string {
   const requirementsText = requirements
@@ -112,6 +115,43 @@ ${r.acceptanceCriteria.map((c) => `  - ${c}`).join("\n")}
           .join("\n\n")}`
       : "";
 
+  const probeResultsText =
+    testResults.probeResults && testResults.probeResults.length > 0
+      ? `\n## Probe Results\n${testResults.probeResults
+          .slice(0, MAX_PROBES_IN_PROMPT)
+          .map((probe) => {
+            const reqIds =
+              probe.coveredRequirementIds.length > 0
+                ? ` [Requirements: ${probe.coveredRequirementIds.join(", ")}]`
+                : "";
+            const metricsText = probe.metrics
+              ? Object.entries(probe.metrics)
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join(", ")
+              : "none";
+            const findingsText =
+              probe.findings && probe.findings.length > 0
+                ? probe.findings.slice(0, 5).map((f) => `  - ${f}`).join("\n")
+                : "  - none";
+            return `### Probe ${probe.id} (${probe.kind})${reqIds}\nStatus: ${probe.status}\nSummary: ${probe.summary}\nMetrics: ${metricsText}\nFindings:\n${findingsText}`;
+          })
+          .join("\n\n")}`
+      : "";
+
+  const coverageHintsText = `\n## Requirement Coverage Hints\n${requirements
+    .map((req) => {
+      const scenarioMatches = (testResults.scenarioRuns ?? [])
+        .filter((sr) => sr.requirementIds.includes(req.id))
+        .map((sr) => `${sr.scenarioId}:${sr.status}`)
+        .slice(0, 6);
+      const probeMatches = (testResults.probeResults ?? [])
+        .filter((probe) => probe.coveredRequirementIds.includes(req.id))
+        .map((probe) => `${probe.kind}:${probe.status}`)
+        .slice(0, 6);
+      return `- ${req.id}: scenarios=${scenarioMatches.length > 0 ? scenarioMatches.join(", ") : "none"}; probes=${probeMatches.length > 0 ? probeMatches.join(", ") : "none"}`;
+    })
+    .join("\n")}`;
+
   const errorsText =
     testResults.errors.length > 0
       ? `\n## Errors Encountered\n${testResults.errors
@@ -132,6 +172,8 @@ Screenshots captured: ${screenshotList.join(", ")}
 ## Steps Executed
 ${stepsText}
 ${scenarioRunsText}
+${probeResultsText}
+${coverageHintsText}
 ${errorsText}
 
 ## Task

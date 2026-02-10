@@ -32,14 +32,26 @@ export async function runCrossValidationPhase(
     level: "info",
   });
 
-  const crossValidationResult = await crossValidate(
+  const heartbeatIntervalMs = 15000;
+  let elapsedMs = 0;
+  const heartbeat = setInterval(() => {
+    elapsedMs += heartbeatIntervalMs;
+    emit(onProgress, {
+      type: "log",
+      message: `Cross-validation in progress... ${Math.round(elapsedMs / 1000)}s elapsed`,
+      level: "info",
+    });
+  }, heartbeatIntervalMs);
+
+  const results = await crossValidate(
     requirements,
     rubric.criteria,
     testExecution,
     openRouterApiKey,
     openRouterModel
-  );
-  const results = crossValidationResult.results;
+  )
+    .then((crossValidationResult) => crossValidationResult.results)
+    .finally(() => clearInterval(heartbeat));
 
   for (let i = 0; i < results.length; i++) {
     emit(onProgress, {

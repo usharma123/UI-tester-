@@ -47,7 +47,9 @@ export async function runPlanningPhase(options: PlanningPhaseOptions): Promise<P
   const pageUrls = sitemap.urls.slice(0, config.maxPages).map((u) => u.loc);
   const allScenarios: TestScenario[] = [];
 
+  // Broad pass across discovered pages
   for (let i = 0; i < pageUrls.length; i++) {
+    if (allScenarios.length >= config.maxTotalScenarios) break;
     const pageUrl = pageUrls[i];
     emit(onProgress, {
       type: "log",
@@ -55,13 +57,17 @@ export async function runPlanningPhase(options: PlanningPhaseOptions): Promise<P
       level: "info",
     });
 
+    const remainingBudget = Math.max(config.maxTotalScenarios - allScenarios.length, 0);
+    const perPageBudget = Math.min(qaConfig.maxScenariosPerPage, remainingBudget);
+    if (perPageBudget <= 0) break;
+
     try {
       const scenarios = await analyzePage({
         browser,
         url: pageUrl,
         llm,
         screenshotDir,
-        maxScenarios: qaConfig.maxScenariosPerPage,
+        maxScenarios: perPageBudget,
         goals: requirementGoals,
       });
       allScenarios.push(...scenarios);
@@ -74,76 +80,75 @@ export async function runPlanningPhase(options: PlanningPhaseOptions): Promise<P
     }
   }
 
-  // Fill requirementIds when model omitted them using deterministic fallback mapping.
-  for (const scenario of allScenarios) {
-    if (!scenario.requirementIds || scenario.requirementIds.length === 0) {
-      const inferred = inferScenarioRequirementIds(scenario, requirements);
-      if (inferred.length > 0) {
-        scenario.requirementIds = inferred;
-      }
+  mergeAndAnnotateScenarios(allScenarios, requirements);
+
+  // Iterative must/should coverage closure
+  for (let round = 1; round <= config.gapRounds; round++) {
+    if (allScenarios.length >= config.maxTotalScenarios) {
+      emit(onProgress, {
+        type: "log",
+        message: `Stopping gap analysis: scenario cap reached (${config.maxTotalScenarios})`,
+        level: "warn",
+      });
+      break;
     }
-  }
 
-  // Coverage gap detection: find must/should requirements not covered by any scenario
-  const coveredReqIds = new Set(
-    allScenarios.flatMap((s) => s.requirementIds ?? [])
-  );
-  const uncoveredRequirements = requirements.filter(
-    (r) =>
-      r.testable &&
-      (r.priority === "must" || r.priority === "should") &&
-      !coveredReqIds.has(r.id)
-  );
+    const uncovered = findUncoveredMustShould(requirements, allScenarios);
+    if (uncovered.length === 0) {
+      emit(onProgress, {
+        type: "log",
+        message: `Coverage closure complete: all must/should requirements mapped to scenarios.`,
+        level: "info",
+      });
+      break;
+    }
 
-  if (uncoveredRequirements.length > 0 && pageUrls.length > 0) {
-    const uncoveredGoals = uncoveredRequirements
-      .map((r) => `${r.id}: ${r.summary}`)
-      .join("; ");
-
+    const targetPageUrls = rankPagesForRequirements(pageUrls, uncovered).slice(0, config.gapPagesPerRound);
+    const uncoveredGoals = uncovered.map((r) => `${r.id}: ${r.summary}`).join("; ");
     emit(onProgress, {
       type: "log",
-      message: `${uncoveredRequirements.length} must/should requirements uncovered, running focused second pass...`,
+      message: `Gap round ${round}/${config.gapRounds}: ${uncovered.length} uncovered must/should requirements, targeting ${targetPageUrls.length} page(s).`,
       level: "info",
     });
 
-    // Run a focused second pass on the first page (most likely to have the core features)
-    try {
-      const gapScenarios = await analyzePage({
-        browser,
-        url: pageUrls[0],
-        llm,
-        screenshotDir,
-        maxScenarios: Math.min(qaConfig.maxScenariosPerPage, uncoveredRequirements.length),
-        goals: `FOCUS on these UNCOVERED requirements: ${uncoveredGoals}`,
-      });
+    const beforeCount = allScenarios.length;
+    for (const targetUrl of targetPageUrls) {
+      if (allScenarios.length >= config.maxTotalScenarios) break;
+      const remainingBudget = Math.max(config.maxTotalScenarios - allScenarios.length, 0);
+      const perPageBudget = Math.min(
+        qaConfig.maxScenariosPerPage,
+        Math.max(2, Math.min(uncovered.length, qaConfig.maxScenariosPerPage)),
+        remainingBudget
+      );
+      if (perPageBudget <= 0) break;
 
-      // Tag gap scenarios with matched requirement IDs
-      for (const scenario of gapScenarios) {
-        const matchedIds = inferScenarioRequirementIds(scenario, uncoveredRequirements);
-
-        if (matchedIds.length > 0) {
-          scenario.requirementIds = matchedIds;
-        }
+      try {
+        const gapScenarios = await analyzePage({
+          browser,
+          url: targetUrl,
+          llm,
+          screenshotDir,
+          maxScenarios: perPageBudget,
+          goals: `FOCUS ONLY on these uncovered requirements and capture explicit evidence: ${uncoveredGoals}`,
+        });
+        allScenarios.push(...gapScenarios);
+      } catch (err) {
+        emit(onProgress, {
+          type: "log",
+          message: `Gap round ${round} failed on ${targetUrl}: ${err instanceof Error ? err.message : String(err)}`,
+          level: "warn",
+        });
       }
-
-      allScenarios.push(...gapScenarios);
-      const deduplicated = dedupeScenarios(allScenarios);
-      const removedCount = allScenarios.length - deduplicated.length;
-      allScenarios.length = 0;
-      allScenarios.push(...deduplicated);
-
-      emit(onProgress, {
-        type: "log",
-        message: `Gap analysis added ${gapScenarios.length} scenarios (${removedCount} duplicates removed)`,
-        level: "info",
-      });
-    } catch (err) {
-      emit(onProgress, {
-        type: "log",
-        message: `Gap analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        level: "warn",
-      });
     }
+
+    mergeAndAnnotateScenarios(allScenarios, requirements);
+    const roundAdded = allScenarios.length - beforeCount;
+    const uncoveredAfter = findUncoveredMustShould(requirements, allScenarios).length;
+    emit(onProgress, {
+      type: "log",
+      message: `Gap round ${round} added ${roundAdded} scenario(s). Uncovered must/should remaining: ${uncoveredAfter}.`,
+      level: "info",
+    });
   }
 
   emit(onProgress, {
@@ -155,6 +160,60 @@ export async function runPlanningPhase(options: PlanningPhaseOptions): Promise<P
   emitValidationPhaseComplete(onProgress, "planning");
 
   return { scenarios: allScenarios, requirementGoals, qaConfig };
+}
+
+function findUncoveredMustShould(requirements: Requirement[], scenarios: TestScenario[]): Requirement[] {
+  const coveredReqIds = new Set(scenarios.flatMap((s) => s.requirementIds ?? []));
+  return requirements.filter(
+    (r) =>
+      r.testable &&
+      (r.priority === "must" || r.priority === "should") &&
+      !coveredReqIds.has(r.id)
+  );
+}
+
+function rankPagesForRequirements(pageUrls: string[], requirements: Requirement[]): string[] {
+  const keywords = extractRequirementKeywords(requirements);
+  const scored = pageUrls.map((url, index) => {
+    const lowerUrl = url.toLowerCase();
+    let score = 0;
+    for (const keyword of keywords) {
+      if (lowerUrl.includes(keyword)) score += 1;
+    }
+    if (index === 0) score += 0.1; // slight homepage tie-breaker
+    return { url, score };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.url);
+}
+
+function extractRequirementKeywords(requirements: Requirement[]): string[] {
+  const keywords = new Set<string>();
+  for (const req of requirements) {
+    const text = `${req.summary} ${req.acceptanceCriteria.join(" ")}`.toLowerCase();
+    const tokens = text.split(/[^a-z0-9]+/).filter((t) => t.length >= 4);
+    for (const token of tokens) {
+      if (!["with", "that", "from", "have", "must", "should", "when", "then"].includes(token)) {
+        keywords.add(token);
+      }
+    }
+  }
+  return Array.from(keywords).slice(0, 200);
+}
+
+function mergeAndAnnotateScenarios(scenarios: TestScenario[], requirements: Requirement[]): void {
+  for (const scenario of scenarios) {
+    if (!scenario.requirementIds || scenario.requirementIds.length === 0) {
+      const inferred = inferScenarioRequirementIds(scenario, requirements);
+      if (inferred.length > 0) scenario.requirementIds = inferred;
+    }
+  }
+
+  const deduplicated = dedupeScenarios(scenarios);
+  scenarios.length = 0;
+  scenarios.push(...deduplicated);
 }
 
 function inferScenarioRequirementIds(
@@ -217,3 +276,11 @@ function dedupeScenarios(scenarios: TestScenario[]): TestScenario[] {
 function normalizeScenarioText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
 }
+
+export const __planningInternals = {
+  findUncoveredMustShould,
+  rankPagesForRequirements,
+  mergeAndAnnotateScenarios,
+  inferScenarioRequirementIds,
+  dedupeScenarios,
+};

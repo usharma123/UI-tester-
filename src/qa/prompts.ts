@@ -10,6 +10,9 @@ Focus on:
 - Interactive elements (dropdowns, modals, tooltips, toggles)
 - Authentication flows (login, signup, logout)
 - Content integrity (images load, text displays correctly)
+- Accessibility interactions (keyboard navigation, ARIA labeling, contrast-sensitive UI)
+- Responsive behavior (desktop vs mobile layout expectations)
+- Performance-sensitive UX checks (loading and interaction responsiveness)
 
 Output ONLY valid JSON matching this schema:
 {
@@ -28,7 +31,7 @@ Output ONLY valid JSON matching this schema:
 }
 
 CRITICAL RULES:
-1. Generate 2-4 focused scenarios per page
+1. Generate 3-8 focused scenarios per page when requirements demand broader coverage
 2. Mark "scope": "global" for site-wide features (navigation menu, theme toggle, header/footer links). These are tested ONCE for the entire site.
 3. Mark "scope": "page" for page-specific features (unique content, forms, interactive elements specific to THIS page)
 4. NEVER generate scenarios for external link validation - just verify internal navigation works
@@ -37,7 +40,8 @@ CRITICAL RULES:
 7. Avoid vague assertions - a test should have a clear, binary outcome
 8. Don't test every copy button or every link - test ONE representative example of each type
 9. When requirement IDs are present in Testing Focus, include matching requirementIds per scenario when possible
-10. Output ONLY valid JSON, no markdown or explanation`;
+10. If Testing Focus lists uncovered requirement IDs, prioritize scenarios that directly verify those requirements and include explicit expected evidence
+11. Output ONLY valid JSON, no markdown or explanation`;
 
 export function buildAnalyzerPrompt(url: string, domSnapshot: string, goals?: string): string {
   let prompt = `## Page URL\n${url}\n\n## DOM Snapshot\n${domSnapshot.slice(0, 15000)}`;
@@ -86,12 +90,15 @@ CRITICAL RULES:
 6. SELECTOR STRATEGY: Prefer text selectors like button:has-text("X") over complex CSS.
 7. ONE VERIFICATION: A single assert or click that shows the feature works is enough - move on.
 8. USE SELECT FOR DROPDOWNS: For <select> elements, ALWAYS use "select" action, NOT "click" on options.
+9. BEFORE SELECT: Confirm from DOM snapshot that target is a native <select>. If DOM does not clearly show <select>, DO NOT use "select".
+10. CUSTOM DROPDOWNS: Use click flow: open combobox trigger (role='combobox' or aria-haspopup='listbox') then click option text/role='option'.
 
 SELECTOR HYGIENE:
 - NEVER use empty attribute selectors like [name=''] or [id='']
 - For <select> elements, use "select" action; for custom dropdowns (div-based), click trigger then click option text
 - Prefer selectors in order: data-testid > role+name > text content > id > name > CSS class
 - If a previous action failed, try a DIFFERENT selector or approach
+- If "select" failed with "requires a native <select>", immediately switch to custom dropdown click flow
 
 Example of efficient testing:
 - To test a theme toggle: click toggle → verify color changed → done(pass). That's 2-3 steps max.
