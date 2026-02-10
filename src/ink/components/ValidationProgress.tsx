@@ -3,10 +3,9 @@
  */
 
 import React from "react";
-import { Box, Text } from "ink";
-import Spinner from "ink-spinner";
 import type { ValidationPhase } from "../../validation/types.js";
 import { validationPhaseLabels } from "../validate-types.js";
+import { PhaseRail } from "./primitives/PhaseRail.js";
 
 interface ValidationProgressProps {
   currentPhase: ValidationPhase | null;
@@ -28,40 +27,17 @@ export function ValidationProgress({
   currentPhase,
   completedPhases,
 }: ValidationProgressProps): React.ReactElement {
-  return (
-    <Box flexDirection="column">
-      <Box marginBottom={1}>
-        {currentPhase && (
-          <>
-            <Text color="cyan">
-              <Spinner type="dots" />
-            </Text>
-            <Text> {validationPhaseLabels[currentPhase]}</Text>
-          </>
-        )}
-      </Box>
-      <Box>
-        {allPhases.map((phase, index) => {
-          const isCompleted = completedPhases.includes(phase);
-          const isCurrent = phase === currentPhase;
-          const isPending = !isCompleted && !isCurrent;
+  const steps = allPhases.map((phase) => ({
+    id: phase,
+    label: validationPhaseLabels[phase],
+  }));
 
-          return (
-            <Box key={phase} marginRight={1}>
-              <Text
-                color={isCompleted ? "green" : isCurrent ? "cyan" : "gray"}
-                dimColor={isPending}
-              >
-                {isCompleted ? "[x]" : isCurrent ? "[>]" : "[ ]"}
-              </Text>
-              <Text dimColor={isPending}>
-                {" "}
-                {index + 1}
-              </Text>
-            </Box>
-          );
-        })}
-      </Box>
-    </Box>
+  return (
+    <PhaseRail
+      steps={steps}
+      currentStep={currentPhase}
+      completedSteps={completedPhases}
+      variant="numeric"
+    />
   );
 }

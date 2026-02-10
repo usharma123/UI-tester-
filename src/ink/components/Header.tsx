@@ -1,15 +1,6 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { ScreenHeader } from "./primitives/ScreenHeader.js";
 
 export function Header(): React.ReactElement {
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text bold color="cyan">
-          UI QA Agent
-        </Text>
-      </Box>
-      <Text dimColor>AI-powered website testing</Text>
-    </Box>
-  );
+  return <ScreenHeader title="UI QA Agent" subtitle="AI-powered website testing" />;
 }

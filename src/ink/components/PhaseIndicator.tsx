@@ -1,7 +1,6 @@
 import React from "react";
-import { Box, Text } from "ink";
-import Spinner from "ink-spinner";
 import type { QAPhase } from "../../qa/progress-types.js";
+import { PhaseRail } from "./primitives/PhaseRail.js";
 
 interface PhaseIndicatorProps {
   currentPhase: QAPhase | null;
@@ -21,34 +20,17 @@ export function PhaseIndicator({
   currentPhase,
   completedPhases,
 }: PhaseIndicatorProps): React.ReactElement {
-  return (
-    <Box>
-      {phaseOrder.map((phase, index) => {
-        const isCompleted = completedPhases.includes(phase);
-        const isCurrent = phase === currentPhase;
-        const isPending = !isCompleted && !isCurrent;
+  const steps = phaseOrder.map((phase) => ({
+    id: phase,
+    label: phaseLabels[phase],
+  }));
 
-        return (
-          <Box key={phase} marginRight={index < phaseOrder.length - 1 ? 1 : 0}>
-            {isCompleted && <Text color="green">{"[x]"}</Text>}
-            {isCurrent && (
-              <Box>
-                <Text color="cyan">{"["}</Text>
-                <Text color="cyan">
-                  <Spinner type="dots" />
-                </Text>
-                <Text color="cyan">{"]"}</Text>
-              </Box>
-            )}
-            {isPending && <Text dimColor>{"[ ]"}</Text>}
-            <Text color={isPending ? "gray" : undefined}>
-              {" "}
-              {phaseLabels[phase]}
-            </Text>
-            {index < phaseOrder.length - 1 && <Text dimColor> {">"}</Text>}
-          </Box>
-        );
-      })}
-    </Box>
+  return (
+    <PhaseRail
+      steps={steps}
+      currentStep={currentPhase}
+      completedSteps={completedPhases}
+      variant="flow"
+    />
   );
 }
