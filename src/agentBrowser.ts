@@ -146,6 +146,8 @@ export interface AgentBrowser {
 export interface PageSnapshot {
   url: string;
   domHash: string;
+  visibleTextHash: string;
+  interactiveStateHash: string;
   elementCount: number;
   textLength: number;
   dialogCount: number;
@@ -264,9 +266,13 @@ const SNAPSHOT_SCRIPT = `
     if (elId) info += ' id="' + elId + '"';
     if (role) info += ' role="' + role + '"';
     if (ariaLabel) info += ' aria-label="' + ariaLabel + '"';
+    var testId = el.getAttribute && el.getAttribute("data-testid");
+    if (testId) info += ' data-testid="' + testId + '"';
     if (el.tagName === "INPUT") {
-      info += ' type="' + el.type + '" name="' + el.name + '"';
+      info += ' type="' + el.type + '"';
+      if (el.name) info += ' name="' + el.name + '"';
       if (el.placeholder) info += ' placeholder="' + el.placeholder + '"';
+      if (el.value) info += ' value="' + el.value + '"';
     }
     if (el.tagName === "A" && el.href) {
       info += ' href="' + el.href + '"';
@@ -280,7 +286,13 @@ const SNAPSHOT_SCRIPT = `
     }
     if (el.tagName === "SELECT") {
       var selName = el.getAttribute('name');
-      if (selName !== null) info += ' name="' + selName + '"';
+      if (selName) info += ' name="' + selName + '"';
+      var selOpt = el.options && el.options[el.selectedIndex];
+      if (selOpt) info += ' selected-text="' + (selOpt.textContent || "").trim().slice(0, 50) + '"';
+    }
+    if (el.tagName === "TEXTAREA") {
+      if (el.name) info += ' name="' + el.name + '"';
+      if (el.value) info += ' value="' + el.value.slice(0, 50) + '"';
     }
     info += ">";
 
@@ -463,7 +475,24 @@ const PAGE_SNAPSHOT_SCRIPT = `
       return s;
     }).join(',');
   const domHash = simpleHash(tags);
-  
+
+  // Hash of visible text content (headings, labels, links, etc.)
+  const textEls = Array.from(body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,label,td,th,li,a,button')).slice(0, 500);
+  const visibleTexts = textEls.map(el => (el.textContent || '').trim().slice(0, 80)).join('|');
+  const visibleTextHash = simpleHash(visibleTexts);
+
+  // Hash of interactive element state (input values, select indices, checkboxes)
+  const interactiveEls = Array.from(body.querySelectorAll('input,select,textarea'));
+  const interactiveState = interactiveEls.map(el => {
+    if (el.tagName === 'SELECT') return 'S:' + el.selectedIndex + ':' + (el.value || '');
+    if (el.tagName === 'INPUT') {
+      if (el.type === 'checkbox' || el.type === 'radio') return 'C:' + el.checked;
+      return 'I:' + (el.value || '');
+    }
+    return 'T:' + (el.value || '');
+  }).join('|');
+  const interactiveStateHash = simpleHash(interactiveState);
+
   const html = document.documentElement;
   const bodyClass = body ? (body.className || '') : '';
   const htmlClass = html ? (html.className || '') : '';
@@ -475,6 +504,8 @@ const PAGE_SNAPSHOT_SCRIPT = `
   return JSON.stringify({
     url: window.location.href,
     domHash: domHash,
+    visibleTextHash: visibleTextHash,
+    interactiveStateHash: interactiveStateHash,
     elementCount: elementCount,
     textLength: textLength,
     dialogCount: visibleDialogs.length,
@@ -606,8 +637,58 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
       const normalizedSelector = normalizeSelector(selector);
       await withRetry(async () => {
         const p = await ensurePage();
-        await p.selectOption(normalizedSelector, { label: value }, { timeout: actionTimeout })
-          .catch(() => p.selectOption(normalizedSelector, { value: value }, { timeout: actionTimeout }));
+
+        // Check if element is actually a <select>.
+        const locator = p.locator(normalizedSelector).first();
+        const tagName = await locator
+          .evaluate((el) => el.tagName)
+          .catch(() => "");
+        const isNativeSelect = tagName.toUpperCase() === "SELECT";
+
+        if (isNativeSelect) {
+          // Native <select>: try label exact → value exact → case-insensitive partial
+          try {
+            await p.selectOption(normalizedSelector, { label: value }, { timeout: actionTimeout });
+          } catch {
+            try {
+              await p.selectOption(normalizedSelector, { value: value }, { timeout: actionTimeout });
+            } catch {
+              // Case-insensitive partial match on option text or value
+              const matchedValue = await p.evaluate(
+                (args: { sel: string; val: string }) => {
+                  const select = document.querySelector(args.sel) as HTMLSelectElement | null;
+                  if (!select) return null;
+                  const lower = args.val.toLowerCase();
+                  for (const opt of Array.from(select.options)) {
+                    if (opt.text.toLowerCase().includes(lower) || opt.value.toLowerCase().includes(lower)) {
+                      return opt.value;
+                    }
+                  }
+                  // Check if already selected
+                  const current = select.options[select.selectedIndex];
+                  if (current && (current.text.toLowerCase().includes(lower) || current.value.toLowerCase().includes(lower))) {
+                    return "__ALREADY_SELECTED__";
+                  }
+                  return null;
+                },
+                { sel: normalizedSelector, val: value }
+              );
+
+              if (matchedValue === "__ALREADY_SELECTED__") {
+                // Already selected — no-op success
+              } else if (matchedValue) {
+                await p.selectOption(normalizedSelector, { value: matchedValue }, { timeout: actionTimeout });
+              } else {
+                throw new Error(`No option matching "${value}" found in ${selector}`);
+              }
+            }
+          }
+        } else {
+          throw new Error(
+            `select action requires a native <select>; got "${tagName || "unknown"}" for selector: ${selector}. ` +
+            `Use click actions for custom dropdowns.`
+          );
+        }
       }, options, 1);
 
       if (options.debug) {
@@ -865,6 +946,24 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
         return {
           type: "dom_changed",
           details: `DOM changed: ${elementDiff} elements, ${textDiff} text chars`,
+          success: true,
+        };
+      }
+
+      // Visible text content changed (e.g., dropdown label updated, content swap)
+      if (beforeSnapshot.visibleTextHash !== afterSnapshot.visibleTextHash) {
+        return {
+          type: "dom_changed",
+          details: "Visible text content changed",
+          success: true,
+        };
+      }
+
+      // Form control state changed (e.g., select option chosen, input value set)
+      if (beforeSnapshot.interactiveStateHash !== afterSnapshot.interactiveStateHash) {
+        return {
+          type: "dom_changed",
+          details: "Form control state changed (input value, select option, or checkbox)",
           success: true,
         };
       }
