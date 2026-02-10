@@ -1,4 +1,5 @@
 import { describe, it, expect } from "bun:test";
+import { buildCustomSelectFallbackSelectors } from "../src/agentBrowser.js";
 
 /**
  * Placeholder tests for the selectOption cascade strategy.
@@ -6,22 +7,32 @@ import { describe, it, expect } from "bun:test";
  * that would run in a CI environment with Playwright browsers installed.
  */
 describe("selectOption cascade strategy", () => {
-  it("should be tested in integration environment", () => {
-    // The cascade logic is:
-    // 1. Check if element is actually <SELECT> via page.evaluate
-    // 2. If <SELECT>: try label exact → value exact → case-insensitive partial → already-selected
-    // 3. If non-<SELECT> (custom dropdown): throw actionable guidance to use click actions
-    expect(true).toBe(true);
+  it("builds nth-of-type custom dropdown fallback selectors", () => {
+    const selectors = buildCustomSelectFallbackSelectors("select:nth-of-type(2)");
+
+    expect(selectors).toContain("select:nth-of-type(2)");
+    expect(selectors).toContain("[role='combobox']:nth-of-type(2)");
+    expect(selectors).toContain("[aria-haspopup='listbox']:nth-of-type(2)");
+    expect(selectors).toContain("button:nth-of-type(2)");
+    expect(selectors).toContain("[role='combobox']");
+    expect(selectors).toContain("[aria-haspopup='listbox']");
+    expect(selectors).toContain("button[aria-haspopup='listbox']");
   });
 
-  it("should reject non-native select targets", () => {
-    // When the target element is not a native <select>, selectOption should
-    // fail clearly and let the agent retry with click-based flow.
-    expect(true).toBe(true);
+  it("keeps custom selector first and deduplicates", () => {
+    const selectors = buildCustomSelectFallbackSelectors("[role='combobox']");
+
+    expect(selectors[0]).toBe("[role='combobox']");
+    const unique = new Set(selectors);
+    expect(unique.size).toBe(selectors.length);
   });
 
-  it("should handle already-selected option gracefully", () => {
-    // When the desired value is already selected, no error should be thrown
-    expect(true).toBe(true);
+  it("includes generic fallback selectors for non-nth selectors", () => {
+    const selectors = buildCustomSelectFallbackSelectors("div.currency-trigger");
+
+    expect(selectors).toContain("div.currency-trigger");
+    expect(selectors).toContain("[role='combobox']");
+    expect(selectors).toContain("[aria-haspopup='listbox']");
+    expect(selectors).toContain("button[aria-haspopup='listbox']");
   });
 });

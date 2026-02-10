@@ -312,7 +312,7 @@ export async function runScenario(options: RunScenarioOptions): Promise<TestResu
       if (failClass === "soft") {
         const lastEntry = history[history.length - 1];
         if (lastEntry) {
-          lastEntry.result += ` — REPAIR HINT: Try a different selector or approach.`;
+          lastEntry.result += ` — REPAIR HINT: ${buildRepairHint(action, error)}`;
         }
       }
 
@@ -439,4 +439,31 @@ function formatAction(action: AgentAction): string {
     default:
       return action.type;
   }
+}
+
+function buildRepairHint(action: AgentAction, error?: string): string {
+  const lowerError = (error || "").toLowerCase();
+
+  if (
+    action.type === "select" &&
+    (lowerError.includes("requires a native <select>") ||
+      lowerError.includes("custom dropdown") ||
+      lowerError.includes("could not find dropdown trigger") ||
+      lowerError.includes("could not choose option"))
+  ) {
+    return "Target appears to be a custom dropdown. Click combobox trigger (role='combobox' or [aria-haspopup='listbox']) then click option text/role='option'.";
+  }
+
+  if (action.type === "select" && lowerError.includes("timeout")) {
+    return "Do not retry the same select selector. Verify native <select> exists in DOM; otherwise use custom dropdown click flow.";
+  }
+
+  if (
+    (action.type === "click" || action.type === "hover") &&
+    (lowerError.includes("element not found") || lowerError.includes("no element matches"))
+  ) {
+    return "Use a stronger selector strategy: role+name or has-text before broad CSS.";
+  }
+
+  return "Try a different selector or approach.";
 }

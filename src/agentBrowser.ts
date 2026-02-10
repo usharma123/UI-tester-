@@ -127,6 +127,7 @@ export interface AgentBrowser {
   screenshot(path: string): Promise<void>;
   eval(script: string): Promise<string>;
   evalJson<T>(script: string): Promise<T>;
+  getPlaywrightPage(): Promise<Page>;
   getLinks(): Promise<LinkInfo[]>;
   setViewportSize(width: number, height: number): Promise<void>;
   close(): Promise<void>;
@@ -212,6 +213,33 @@ function normalizeSelector(selector: string): string {
 
   // Regular CSS selector - pass through
   return selector;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function buildCustomSelectFallbackSelectors(normalizedSelector: string): string[] {
+  const selectors: string[] = [normalizedSelector];
+  const nthMatch = normalizedSelector.match(/:nth-of-type\((\d+)\)/i);
+  const tagLikeSelect = /^select\b/i.test(normalizedSelector);
+
+  if (tagLikeSelect && nthMatch) {
+    const nth = nthMatch[1];
+    selectors.push(
+      `[role='combobox']:nth-of-type(${nth})`,
+      `[aria-haspopup='listbox']:nth-of-type(${nth})`,
+      `button:nth-of-type(${nth})`
+    );
+  }
+
+  selectors.push(
+    "[role='combobox']",
+    "[aria-haspopup='listbox']",
+    "button[aria-haspopup='listbox']"
+  );
+
+  return Array.from(new Set(selectors));
 }
 
 /**
@@ -684,9 +712,73 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
             }
           }
         } else {
+          // Custom dropdown fallback (combobox/listbox patterns).
+          const fallbackSelectors = buildCustomSelectFallbackSelectors(normalizedSelector);
+          let triggerSelectorUsed: string | null = null;
+
+          for (const candidate of fallbackSelectors) {
+            const trigger = p.locator(candidate).first();
+            const count = await trigger.count().catch(() => 0);
+            if (count === 0) continue;
+            try {
+              await trigger.click({ timeout: Math.min(actionTimeout, 5000) });
+              triggerSelectorUsed = candidate;
+              break;
+            } catch {
+              // Try next candidate selector
+            }
+          }
+
+          if (!triggerSelectorUsed) {
+            throw new Error(
+              `select action could not find dropdown trigger for selector: ${selector} (resolved: ${normalizedSelector}). Tried selectors: ${fallbackSelectors.join(", ")}`
+            );
+          }
+
+          const exactPattern = new RegExp(`^\\s*${escapeRegExp(value)}\\s*$`, "i");
+          const partialPattern = new RegExp(escapeRegExp(value), "i");
+          const roleOptionExact = p.getByRole("option", { name: exactPattern }).first();
+          const roleOptionPartial = p.getByRole("option", { name: partialPattern }).first();
+
+          const clickOptionIfPresent = async (locator: ReturnType<Page["locator"]>): Promise<boolean> => {
+            const count = await locator.count().catch(() => 0);
+            if (count === 0) return false;
+            try {
+              await locator.click({ timeout: Math.min(actionTimeout, 5000) });
+              return true;
+            } catch {
+              return false;
+            }
+          };
+
+          if (await clickOptionIfPresent(roleOptionExact)) return;
+          if (await clickOptionIfPresent(roleOptionPartial)) return;
+
+          const genericOption = p
+            .locator(
+              "[role='listbox'] [role='option'], [role='listbox'] [data-value], [data-state='open'] [role='option'], [data-state='open'] [data-value]"
+            )
+            .filter({ hasText: partialPattern })
+            .first();
+          if (await clickOptionIfPresent(genericOption)) return;
+
+          // If trigger already shows target value, treat as no-op success.
+          const triggerText = await p
+            .locator(triggerSelectorUsed)
+            .first()
+            .textContent()
+            .catch(() => "");
+          if ((triggerText || "").toLowerCase().includes(value.toLowerCase())) {
+            return;
+          }
+
+          const visibleOptionCount = await p
+            .locator("[role='option'], [data-value]")
+            .count()
+            .catch(() => 0);
+
           throw new Error(
-            `select action requires a native <select>; got "${tagName || "unknown"}" for selector: ${selector}. ` +
-            `Use click actions for custom dropdowns.`
+            `select action could not choose option "${value}" for custom dropdown selector: ${selector}. Trigger selector used: ${triggerSelectorUsed}. Visible options detected: ${visibleOptionCount}.`
           );
         }
       }, options, 1);
@@ -737,6 +829,10 @@ export function createAgentBrowser(options: AgentBrowserOptions = {}): AgentBrow
         const result = await p.evaluate(script);
         return result as T;
       }, options, 1);
+    },
+
+    async getPlaywrightPage(): Promise<Page> {
+      return ensurePage();
     },
 
     async getLinks(): Promise<LinkInfo[]> {
