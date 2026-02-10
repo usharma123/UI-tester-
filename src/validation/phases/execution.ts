@@ -18,6 +18,31 @@ export interface ExecutionPhaseOptions {
   testExecution: TestExecutionSummary;
 }
 
+function resolveCloseTimeoutMs(): number {
+  const parsed = parseInt(process.env.BROWSER_CLOSE_TIMEOUT_MS ?? "", 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 5000;
+}
+
+async function closeBrowserSafely(
+  browser: { close: () => Promise<void> },
+  closeTimeoutMs: number,
+  onProgress: ProgressCallback,
+  label: string
+): Promise<void> {
+  try {
+    await withTimeout(browser.close(), closeTimeoutMs, label);
+  } catch (err) {
+    emit(onProgress, {
+      type: "log",
+      message: `${label} failed to close cleanly: ${err instanceof Error ? err.message : String(err)}`,
+      level: "warn",
+    });
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return promise;
@@ -70,6 +95,7 @@ export async function runExecutionPhase(options: ExecutionPhaseOptions): Promise
   const results: TestResult[] = [];
   const concurrency = Math.min(config.parallelBrowsers, scenarios.length);
   const scenarioTimeoutMs = resolveScenarioTimeoutMs(config);
+  const closeTimeoutMs = resolveCloseTimeoutMs();
   const activeScenarios = new Set<string>();
   let completedScenarios = 0;
   const heartbeat = setInterval(() => {
@@ -183,7 +209,12 @@ export async function runExecutionPhase(options: ExecutionPhaseOptions): Promise
           } finally {
             completedScenarios += 1;
             activeScenarios.delete(scenario.id);
-            try { await browser.close(); } catch { /* ignore */ }
+            await closeBrowserSafely(
+              browser,
+              closeTimeoutMs,
+              onProgress,
+              `Scenario browser close (${globalIdx + 1}/${scenarios.length}, ${scenario.id})`
+            );
           }
         })
       );
@@ -241,7 +272,7 @@ export async function runExecutionPhase(options: ExecutionPhaseOptions): Promise
         level: "warn",
       });
     } finally {
-      try { await probeBrowser.close(); } catch { /* ignore */ }
+      await closeBrowserSafely(probeBrowser, closeTimeoutMs, onProgress, "Probe browser close");
     }
   }
 

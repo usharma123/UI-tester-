@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { mkdir, writeFile, readFile, copyFile, readdir } from "node:fs/promises";
 import type { Report, Evidence } from "../qa/types.js";
+import type { TraceabilityReport } from "../validation/types.js";
 
 // Local storage directory (in current working directory)
 const LOCAL_STORAGE_DIR = join(process.cwd(), ".ui-qa-runs");
@@ -33,6 +34,9 @@ export interface LocalRunData {
   summary?: string;
   report?: Report;
   evidence?: Evidence;
+  validationReport?: TraceabilityReport;
+  validationReportPath?: string;
+  validationMarkdownPath?: string;
   error?: string;
   eventsFile?: string;
   startedAt: number;
@@ -131,6 +135,43 @@ export async function completeLocalRun(
     summary,
     report,
     evidence,
+    completedAt: Date.now(),
+  });
+}
+
+export async function completeLocalValidationRun(
+  runId: string,
+  report: TraceabilityReport,
+  reportPath: string,
+  markdownPath: string
+): Promise<void> {
+  const runDir = await ensureRunDir(runId);
+  const localReportPath = join(runDir, "traceability-report.json");
+  const localMarkdownPath = join(runDir, "traceability-report.md");
+  let persistedReportPath = reportPath;
+  let persistedMarkdownPath = markdownPath;
+
+  try {
+    await copyFile(reportPath, localReportPath);
+    persistedReportPath = localReportPath;
+  } catch {
+    // Best-effort copy into run directory
+  }
+
+  try {
+    await copyFile(markdownPath, localMarkdownPath);
+    persistedMarkdownPath = localMarkdownPath;
+  } catch {
+    // Best-effort copy into run directory
+  }
+
+  await updateLocalRun(runId, {
+    status: "completed",
+    score: report.overallScore,
+    summary: report.summary,
+    validationReport: report,
+    validationReportPath: persistedReportPath,
+    validationMarkdownPath: persistedMarkdownPath,
     completedAt: Date.now(),
   });
 }
