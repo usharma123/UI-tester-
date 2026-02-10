@@ -17,6 +17,44 @@ export interface ExecutionPhaseOptions {
   testExecution: TestExecutionSummary;
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise;
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+function resolveScenarioTimeoutMs(config: ValidationConfig): number {
+  const parsed = parseInt(process.env.SCENARIO_TIMEOUT_MS ?? "", 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  // Allow enough time for slower LLM/browser steps, but prevent one scenario from stalling the entire run.
+  return Math.max(config.browserTimeout * 4, 180_000);
+}
+
 export async function runExecutionPhase(options: ExecutionPhaseOptions): Promise<TestResult[]> {
   const { config, qaConfig, scenarios, screenshotDir, onProgress, testExecution } = options;
 
@@ -30,6 +68,7 @@ export async function runExecutionPhase(options: ExecutionPhaseOptions): Promise
   const llm = createLLMClient(qaConfig);
   const results: TestResult[] = [];
   const concurrency = Math.min(config.parallelBrowsers, scenarios.length);
+  const scenarioTimeoutMs = resolveScenarioTimeoutMs(config);
 
   for (let batch = 0; batch < scenarios.length; batch += concurrency) {
     const batchScenarios = scenarios.slice(batch, batch + concurrency);
@@ -53,20 +92,24 @@ export async function runExecutionPhase(options: ExecutionPhaseOptions): Promise
         });
 
         try {
-          const result = await runScenario({
-            browser,
-            scenario,
-            llm,
-            screenshotDir,
-            onStep: (step) => {
-              const errorSuffix = step.error ? ` — ${step.error}` : "";
-              emit(onProgress, {
-                type: "log",
-                message: `  [${scenario.id}] Step ${step.index}: ${step.action.type}${step.action.selector ? ` ${step.action.selector}` : ""} → ${step.success ? "OK" : "FAIL"}${errorSuffix}`,
-                level: step.success ? "info" : "warn",
-              });
-            },
-          });
+          const result = await withTimeout(
+            runScenario({
+              browser,
+              scenario,
+              llm,
+              screenshotDir,
+              onStep: (step) => {
+                const errorSuffix = step.error ? ` — ${step.error}` : "";
+                emit(onProgress, {
+                  type: "log",
+                  message: `  [${scenario.id}] Step ${step.index}: ${step.action.type}${step.action.selector ? ` ${step.action.selector}` : ""} → ${step.success ? "OK" : "FAIL"}${errorSuffix}`,
+                  level: step.success ? "info" : "warn",
+                });
+              },
+            }),
+            scenarioTimeoutMs,
+            `Scenario ${globalIdx + 1}/${scenarios.length} (${scenario.id})`
+          );
 
           // Feed results into testExecution summary for cross-validation
           testExecution.pagesVisited.push(scenario.startUrl);
@@ -82,6 +125,20 @@ export async function runExecutionPhase(options: ExecutionPhaseOptions): Promise
           if (result.status === "error" || result.status === "fail") {
             testExecution.errors.push(`${scenario.title}: ${result.summary}`);
           }
+
+          // Push per-scenario summary for richer cross-validation
+          testExecution.scenarioRuns.push({
+            scenarioId: scenario.id,
+            title: scenario.title,
+            status: result.status,
+            summary: result.summary,
+            requirementIds: scenario.requirementIds ?? [],
+            steps: result.steps.map((s) => ({
+              action: `${s.action.type}${s.action.selector ? ` ${s.action.selector}` : ""}`,
+              success: s.success,
+              error: s.error,
+            })),
+          });
 
           emit(onProgress, {
             type: "log",

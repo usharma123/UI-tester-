@@ -3,6 +3,13 @@
  */
 
 import type { Requirement, RubricCriterion } from "../validation/types.js";
+import type { ScenarioRunSummary } from "../validation/cross-validator.js";
+
+const MAX_SCENARIOS_IN_PROMPT = 20;
+const MAX_STEPS_PER_SCENARIO_IN_PROMPT = 6;
+const MAX_TOTAL_STEPS_IN_PROMPT = 120;
+const MAX_ERRORS_IN_PROMPT = 30;
+const MAX_SCREENSHOTS_IN_PROMPT = 80;
 
 export const CROSS_VALIDATOR_SYSTEM_PROMPT = `You are an expert QA analyst reviewing test results against requirements. Your task is to determine if each requirement passed, partially passed, or failed based on the test evidence.
 
@@ -68,6 +75,7 @@ export function buildCrossValidatorPrompt(
     }>;
     errors: string[];
     screenshots: string[];
+    scenarioRuns?: ScenarioRunSummary[];
   }
 ): string {
   const requirementsText = requirements
@@ -82,26 +90,48 @@ ${r.acceptanceCriteria.map((c) => `  - ${c}`).join("\n")}
     .join("\n\n");
 
   const stepsText = testResults.stepsExecuted
+    .slice(0, MAX_TOTAL_STEPS_IN_PROMPT)
     .map(
       (s, i) =>
         `${i + 1}. ${s.type}${s.selector ? ` on "${s.selector}"` : ""} → ${s.result}${s.screenshot ? ` [screenshot: ${s.screenshot}]` : ""}`
     )
     .join("\n");
 
+  const scenarioRunsText =
+    testResults.scenarioRuns && testResults.scenarioRuns.length > 0
+      ? `\n## Scenario Results\n${testResults.scenarioRuns
+          .slice(0, MAX_SCENARIOS_IN_PROMPT)
+          .map((sr) => {
+            const reqIds = sr.requirementIds.length > 0 ? ` [Requirements: ${sr.requirementIds.join(", ")}]` : "";
+            const stepsDetail = sr.steps
+              .slice(0, MAX_STEPS_PER_SCENARIO_IN_PROMPT)
+              .map((s, idx) => `  ${idx + 1}. ${s.action} → ${s.success ? "OK" : "FAIL"}${s.error ? ` (${s.error})` : ""}`)
+              .join("\n");
+            return `### ${sr.scenarioId}: ${sr.title}${reqIds}\nStatus: ${sr.status}\nSummary: ${sr.summary}\n${stepsDetail}`;
+          })
+          .join("\n\n")}`
+      : "";
+
   const errorsText =
     testResults.errors.length > 0
-      ? `\n## Errors Encountered\n${testResults.errors.map((e) => `- ${e}`).join("\n")}`
+      ? `\n## Errors Encountered\n${testResults.errors
+          .slice(0, MAX_ERRORS_IN_PROMPT)
+          .map((e) => `- ${e}`)
+          .join("\n")}`
       : "";
+
+  const screenshotList = Array.from(new Set(testResults.screenshots)).slice(0, MAX_SCREENSHOTS_IN_PROMPT);
 
   return `## Requirements to Validate
 ${requirementsText}
 
 ## Test Execution Summary
 Pages visited: ${testResults.pagesVisited.join(", ")}
-Screenshots captured: ${testResults.screenshots.join(", ")}
+Screenshots captured: ${screenshotList.join(", ")}
 
 ## Steps Executed
 ${stepsText}
+${scenarioRunsText}
 ${errorsText}
 
 ## Task

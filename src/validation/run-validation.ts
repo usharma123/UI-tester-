@@ -57,6 +57,7 @@ export async function runValidation(
     stepsExecuted: [],
     errors: [],
     screenshots: [],
+    scenarioRuns: [],
   };
 
   let browserToClose: { close: () => Promise<void> } | null = null;

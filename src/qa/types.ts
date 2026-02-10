@@ -12,6 +12,8 @@ export interface TestScenario {
   maxSteps: number;
   /** "global" scenarios are site-wide features tested once; "page" scenarios are page-specific */
   scope: "global" | "page";
+  /** Links this scenario to requirement IDs for traceability */
+  requirementIds?: string[];
 }
 
 export type AgentActionType =

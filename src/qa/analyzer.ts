@@ -100,6 +100,11 @@ export async function analyzeCapture(options: {
     category: s.category || "interaction",
     maxSteps: Math.min(s.maxSteps || 6, 8),
     scope: s.scope || inferScope(s.id || "", s.title || "", s.category || "interaction"),
+    requirementIds: Array.isArray((s as { requirementIds?: unknown }).requirementIds)
+      ? ((s as { requirementIds?: unknown[] }).requirementIds
+          ?.filter((id): id is string => typeof id === "string")
+          .slice(0, 10) ?? [])
+      : undefined,
   }));
 }
 

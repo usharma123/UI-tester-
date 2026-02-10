@@ -10,6 +10,19 @@ import {
   buildCrossValidatorPrompt,
 } from "../prompts/cross-validator.js";
 
+export interface ScenarioRunSummary {
+  scenarioId: string;
+  title: string;
+  status: string;
+  summary: string;
+  requirementIds: string[];
+  steps: Array<{
+    action: string;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
 export interface TestExecutionSummary {
   pagesVisited: string[];
   stepsExecuted: Array<{
@@ -20,6 +33,7 @@ export interface TestExecutionSummary {
   }>;
   errors: string[];
   screenshots: string[];
+  scenarioRuns: ScenarioRunSummary[];
 }
 
 export interface CrossValidationResult {

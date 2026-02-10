@@ -12,6 +12,7 @@ export const TestScenarioSchema = z.object({
   priority: z.enum(["critical", "high", "medium", "low"]),
   category: z.enum(["forms", "navigation", "auth", "content", "interaction", "e2e"]),
   maxSteps: z.number().min(1).max(50),
+  requirementIds: z.array(z.string()).optional(),
 });
 
 // =============================================================================

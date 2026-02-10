@@ -21,7 +21,8 @@ Output ONLY valid JSON matching this schema:
       "priority": "critical" | "high" | "medium" | "low",
       "category": "forms" | "navigation" | "auth" | "content" | "interaction" | "e2e",
       "maxSteps": 5,
-      "scope": "global" | "page"
+      "scope": "global" | "page",
+      "requirementIds": ["REQ-001", "REQ-004"]
     }
   ]
 }
@@ -35,7 +36,8 @@ CRITICAL RULES:
 6. Be SPECIFIC in descriptions: tell the agent exactly what to click and what constitutes pass/fail
 7. Avoid vague assertions - a test should have a clear, binary outcome
 8. Don't test every copy button or every link - test ONE representative example of each type
-9. Output ONLY valid JSON, no markdown or explanation`;
+9. When requirement IDs are present in Testing Focus, include matching requirementIds per scenario when possible
+10. Output ONLY valid JSON, no markdown or explanation`;
 
 export function buildAnalyzerPrompt(url: string, domSnapshot: string, goals?: string): string {
   let prompt = `## Page URL\n${url}\n\n## DOM Snapshot\n${domSnapshot.slice(0, 15000)}`;
@@ -84,6 +86,12 @@ CRITICAL RULES:
 6. SELECTOR STRATEGY: Prefer text selectors like button:has-text("X") over complex CSS.
 7. ONE VERIFICATION: A single assert or click that shows the feature works is enough - move on.
 8. USE SELECT FOR DROPDOWNS: For <select> elements, ALWAYS use "select" action, NOT "click" on options.
+
+SELECTOR HYGIENE:
+- NEVER use empty attribute selectors like [name=''] or [id='']
+- For <select> elements, use "select" action; for custom dropdowns (div-based), click trigger then click option text
+- Prefer selectors in order: data-testid > role+name > text content > id > name > CSS class
+- If a previous action failed, try a DIFFERENT selector or approach
 
 Example of efficient testing:
 - To test a theme toggle: click toggle → verify color changed → done(pass). That's 2-3 steps max.
